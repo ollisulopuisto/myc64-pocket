@@ -19,6 +19,8 @@
  */
 
 #include "bios.h"
+#include "pocket_c64_shortcuts.h"
+#include <stdbool.h>
 
 #define N_OSD_TABS sizeof(osd_tabs) / sizeof(osd_tabs[0])
 
@@ -55,6 +57,9 @@ uint32_t cont1_key = 0;
 
 uint64_t c64_keyb_mask = 0;
 uint64_t c64_isr_keyb_mask = 0;
+static uint8_t c64_saved_joy1 = 0;
+static uint8_t c64_saved_joy2 = 0;
+static bool mod_l_active = false;
 
 uint8_t updated_slots;
 
@@ -211,6 +216,27 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   // Always handle external keyboard
   if (1) { // (*CONT3_KEY >> 28) == 0x4) { // Docked keyboard
     keyboard_ext_handle();
+  }
+
+  if (osd_mode == OSD_OFF) {
+    bool suppress_joy = false;
+    uint64_t shortcut_mask = pocket_c64_process_shortcuts(cont1_key, &suppress_joy);
+    c64_keyb_mask |= shortcut_mask;
+    if (suppress_joy) {
+      if (!mod_l_active) {
+        c64_saved_joy1 = bits_get(*C64_CTRL, 1, 2);
+        c64_saved_joy2 = bits_get(*C64_CTRL, 3, 2);
+        *C64_CTRL = bits_set(*C64_CTRL, 1, 2, 0);
+        *C64_CTRL = bits_set(*C64_CTRL, 3, 2, 0);
+        mod_l_active = true;
+      }
+    } else {
+      if (mod_l_active) {
+        *C64_CTRL = bits_set(*C64_CTRL, 1, 2, c64_saved_joy1);
+        *C64_CTRL = bits_set(*C64_CTRL, 3, 2, c64_saved_joy2);
+        mod_l_active = false;
+      }
+    }
   }
 
   c64_keyb_mask |= c64_isr_keyb_mask;

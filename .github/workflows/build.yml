@@ -1,0 +1,28 @@
+name: Build C64 BIOS and Test
+
+on:
+  push:
+    branches: [ main, feature/** ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image and run build
+        run: |
+          docker build -t c64-builder .
+          docker run --rm -v ${{ github.workspace }}:/src c64-builder
+
+      - name: Upload BIOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: myc64-bios
+          path: |
+            src/bios/bios.bin
+            src/bios/bios.vh
