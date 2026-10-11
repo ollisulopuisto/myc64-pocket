@@ -1,0 +1,8 @@
+*~
+*.bak
+*.backup
+*.swp
+*.DS_Store
+*.o
+*.elf
+*.bin
