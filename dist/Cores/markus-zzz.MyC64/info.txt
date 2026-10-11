@@ -1,0 +1,36 @@
+Commodore 64 for Analogue Pocket (MyC64)
+Pocket Shortcuts Edition
+
+GAMEPAD SHORTCUTS:
+------------------
+Normal (No modifier):
+* Face A: Fire 1 (Joystick)
+* Face B: Fire 2 / Jump (Joystick)
+* Face X: Space
+* Face Y: Return
+* Select: Toggle Virtual Keyboard / In-Core OSD
+
+L Modifier held (Joystick disconnected while held):
+* L + D-pad Up:    F1
+* L + D-pad Right: F3
+* L + D-pad Down:  F5
+* L + D-pad Left:  F7
+* L + Face A:      Space
+* L + Face B:      Return
+* L + Face X:      Run/Stop
+* L + Face Y:      1 (1 Player select)
+
+L + R Modifier held together:
+* L + R + D-pad Up:    F2 (Shift+F1)
+* L + R + D-pad Right: F4 (Shift+F3)
+* L + R + D-pad Down:  F6 (Shift+F5)
+* L + R + D-pad Left:  F8 (Shift+F7)
+* L + R + Face A:      Space
+* L + R + Face B:      N (No)
+* L + R + Face X:      Y (Yes)
+* L + R + Face Y:      2 (2 Players select)
+
+SUPPORTED FORMATS:
+* .CRT (Cartridge - Magic Desk, EasyFlash)
+* .PRG (Crunched programs via Load & Start PRG)
+Place games in Assets/c64/common/

@@ -1,7 +1,7 @@
 {
-    "interact": {
-        "magic": "APF_VER_1",
-        "variables": [
+  "interact": {
+    "magic": "APF_VER_1",
+    "variables": [
       {
         "name": "OSD x-offset",
         "id": 0,
@@ -35,7 +35,62 @@
           "adjust_small": 1,
           "adjust_large": 8
         }
+      },
+      {
+        "name": "Base: X / Y buttons",
+        "id": 200,
+        "type": "list",
+        "enabled": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "X=Space, Y=Return" }
+        ],
+        "writeonly": true
+      },
+      {
+        "name": "L-Hold: D-pad",
+        "id": 201,
+        "type": "list",
+        "enabled": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "U:F1 R:F3 D:F5 L:F7" }
+        ],
+        "writeonly": true
+      },
+      {
+        "name": "L-Hold: A/B/X/Y",
+        "id": 202,
+        "type": "list",
+        "enabled": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "Space / Ret / Stop / 1" }
+        ],
+        "writeonly": true
+      },
+      {
+        "name": "L+R Hold: D-pad",
+        "id": 203,
+        "type": "list",
+        "enabled": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "U:F2 R:F4 D:F6 L:F8" }
+        ],
+        "writeonly": true
+      },
+      {
+        "name": "L+R Hold: A/B/X/Y",
+        "id": 204,
+        "type": "list",
+        "enabled": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "Space / N / Y / 2" }
+        ],
+        "writeonly": true
       }
     ]
-    }
+  }
 }
