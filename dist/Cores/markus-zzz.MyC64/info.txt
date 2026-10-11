@@ -5,7 +5,7 @@ GAMEPAD SHORTCUTS:
 ------------------
 Normal (No modifier):
 * Face A: Fire 1 (Joystick)
-* Face B: Fire 2 / Jump (Joystick)
+* Face B: Jump (Joystick UP) + Fire 2
 * Face X: Space
 * Face Y: Return
 * Select: Toggle Virtual Keyboard / In-Core OSD
