@@ -502,11 +502,11 @@ module core_top (
   always @* begin
     case (c64_ctrl[2:1])
       2'b01: begin
-        // bit 0: UP | Face B (Jump), bits 4:1: Fire1, Right, Left, Down, bits 6:5: POT buttons
-        joystick1 = {cont1_key_s[6:1], cont1_key_s[0] | cont1_key_s[5]};
+        // bit 0: UP | Face B (Jump), bits 1-4: Down, Left, Right, Fire 1, bits 5-6: POT 0
+        joystick1 = {2'b00, cont1_key_s[4:1], cont1_key_s[0] | cont1_key_s[5]};
       end
       2'b10: begin
-        joystick1 = {cont2_key_s[6:1], cont2_key_s[0] | cont2_key_s[5]};
+        joystick1 = {2'b00, cont2_key_s[4:1], cont2_key_s[0] | cont2_key_s[5]};
       end
       default: begin
         joystick1 = 0;
@@ -519,10 +519,10 @@ module core_top (
   always @* begin
     case (c64_ctrl[4:3])
       2'b01: begin
-        joystick2 = {cont1_key_s[6:1], cont1_key_s[0] | cont1_key_s[5]};
+        joystick2 = {2'b00, cont1_key_s[4:1], cont1_key_s[0] | cont1_key_s[5]};
       end
       2'b10: begin
-        joystick2 = {cont2_key_s[6:1], cont2_key_s[0] | cont2_key_s[5]};
+        joystick2 = {2'b00, cont2_key_s[4:1], cont2_key_s[0] | cont2_key_s[5]};
       end
       default: begin
         joystick2 = 0;

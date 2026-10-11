@@ -4,8 +4,8 @@ Pocket Shortcuts Edition
 GAMEPAD SHORTCUTS:
 ------------------
 Normal (No modifier):
-* Face A: Fire 1 (Joystick)
-* Face B: Jump (Joystick UP) + Fire 2
+* Face A: Fire (Joystick)
+* Face B: Jump (Joystick UP)
 * Face X: Space
 * Face Y: Return
 * Select: Toggle Virtual Keyboard / In-Core OSD
