@@ -1,7 +1,7 @@
 {
-    "interact": {
-        "magic": "APF_VER_1",
-        "variables": [
+  "interact": {
+    "magic": "APF_VER_1",
+    "variables": [
       {
         "name": "OSD x-offset",
         "id": 0,
@@ -35,7 +35,61 @@
           "adjust_small": 1,
           "adjust_large": 8
         }
+      },
+      {
+        "name": "Control Mode",
+        "id": 2,
+        "type": "list",
+        "enabled": true,
+        "address": "0xA0000008",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "Standard (D-pad & B)" },
+          { "value": 1, "name": "Platformer (Btn B Jump)" },
+          { "value": 2, "name": "Driving (L=Brake, R=Gas)" }
+        ]
+      },
+      {
+        "name": "Base: X / Y buttons",
+        "id": 200,
+        "type": "list",
+        "enabled": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "X=Space, Y=Return" }
+        ],
+        "writeonly": true
+      },
+      {
+        "name": "L-Hold: Shortcuts",
+        "id": 201,
+        "type": "list",
+        "enabled": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "SELECT: Swap Joy Port 1/2" },
+          { "value": 1, "name": "D-Pad: F1 / F3 / F5 / F7" },
+          { "value": 2, "name": "A/B: Space / Return" },
+          { "value": 3, "name": "X/Y: Run-Stop / 1" }
+        ],
+        "writeonly": true
+      },
+      {
+        "name": "L+R Hold: Shifted",
+        "id": 202,
+        "type": "list",
+        "enabled": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "D-Pad: F2 / F4 / F6 / F8" },
+          { "value": 1, "name": "A/B: Space / N" },
+          { "value": 2, "name": "X/Y: Y / 2" },
+          { "value": 3, "name": "START: Commodore (C=)" }
+        ],
+        "writeonly": true
       }
     ]
-    }
+  }
 }

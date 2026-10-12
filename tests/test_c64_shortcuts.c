@@ -100,6 +100,11 @@ int main() {
     assert(suppress);
     assert(mask == C64_KEYB_MASK_KEY(C64_KEY_N));
 
+    // L + R + Start -> C= (Commodore)
+    mask = pocket_c64_process_shortcuts((1 << 8) | (1 << 9) | (1 << 15), &suppress);
+    assert(suppress);
+    assert(mask == C64_KEYB_MASK_KEY(C64_KEY_CBM));
+
     // No keys -> 0
     mask = pocket_c64_process_shortcuts(0, &suppress);
     assert(!suppress);

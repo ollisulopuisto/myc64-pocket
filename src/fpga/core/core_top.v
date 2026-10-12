@@ -499,13 +499,25 @@ module core_top (
 
   reg [6:0] joystick1;
 
+  // cont1_key_s bits: 0: Up, 1: Down, 2: Left, 3: Right, 4: Fire/Face A, 5: Face B, 6: Face X, 7: Face Y, 8: Trig L, 9: Trig R
+  // control_mode:
+  //   2'b00: Standard (D-pad Up | Face B)
+  //   2'b01: Platformer (Face B only, D-pad Up disabled)
+  //   2'b10: Driving (Trig R = Up/Gas, Trig L = Down/Brake, D-pad Up/Down disabled)
+  wire joy1_up = (control_mode == 2'b10) ? cont1_key_s[9] :
+                 (control_mode == 2'b01) ? cont1_key_s[5] :
+                 (cont1_key_s[0] | cont1_key_s[5]);
+
+  wire joy1_down = (control_mode == 2'b10) ? cont1_key_s[8] : cont1_key_s[1];
+
   always @* begin
     case (c64_ctrl[2:1])
       2'b01: begin
-        joystick1 = cont1_key_s[6:0];
+        // bit 0: Up, bit 1: Down, bit 2: Left, bit 3: Right, bit 4: Fire 1, bits 5-6: POT
+        joystick1 = {2'b00, cont1_key_s[4], cont1_key_s[3:2], joy1_down, joy1_up};
       end
       2'b10: begin
-        joystick1 = cont2_key_s[6:0];
+        joystick1 = {2'b00, cont2_key_s[4:1], cont2_key_s[0] | cont2_key_s[5]};
       end
       default: begin
         joystick1 = 0;
@@ -518,10 +530,10 @@ module core_top (
   always @* begin
     case (c64_ctrl[4:3])
       2'b01: begin
-        joystick2 = cont1_key_s[6:0];
+        joystick2 = {2'b00, cont1_key_s[4], cont1_key_s[3:2], joy1_down, joy1_up};
       end
       2'b10: begin
-        joystick2 = cont2_key_s[6:0];
+        joystick2 = {2'b00, cont2_key_s[4:1], cont2_key_s[0] | cont2_key_s[5]};
       end
       default: begin
         joystick2 = 0;
@@ -1018,10 +1030,12 @@ module core_top (
   //
   reg [7:0] osd_offset_x; // XXX: Unguarded CDC
   reg [7:0] osd_offset_y;
+  reg [1:0] control_mode; // 0: Standard, 1: Platformer (No D-Pad Up), 2: Driving (L=Down, R=Up)
 
   initial begin
     osd_offset_x <= 1;
     osd_offset_y <= 1;
+    control_mode <= 0;
   end
 
   always @(posedge clk_74a) begin
@@ -1030,6 +1044,7 @@ module core_top (
       case (bridge_addr)
         32'hA000_0000: osd_offset_x <= bridge_wr_data;
         32'hA000_0004: osd_offset_y <= bridge_wr_data;
+        32'hA000_0008: control_mode <= bridge_wr_data[1:0];
       endcase
     end
   end
