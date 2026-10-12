@@ -30,6 +30,15 @@
         "extensions": ["g64"]
     },
     {
+        "name": "Load D64 Disk",
+        "id": "3",
+        "required": false,
+        "deferload": true,
+        "parameters": 9,
+        "filename": "",
+        "extensions": ["d64"]
+    },
+    {
         "name": "Basic ROM",
         "id": "200",
         "required": true,
