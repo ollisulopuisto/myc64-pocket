@@ -27,7 +27,7 @@
         ]
       },
       {
-        "name": "Base: X / Y buttons",
+        "name": "Base: Face buttons",
         "id": 200,
         "type": "list",
         "enabled": true,
@@ -35,7 +35,11 @@
         "options": [
           {
             "value": 0,
-            "name": "X: Space / Y: Return"
+            "name": "Y Fire B Jump"
+          },
+          {
+            "value": 1,
+            "name": "X Space A Return"
           }
         ],
         "writeonly": true

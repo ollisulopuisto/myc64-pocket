@@ -120,7 +120,7 @@ The core features full, native in-core `.d64` support with on-the-fly GCR bitstr
 ## Pocket Controls & In-Game Shortcuts
 
 ### Control Modes (Core Menu)
-* **Standard (D-pad & B)**: Classic joystick where D-pad Up or Face B jumps, Face A fires, X is Space, and Y is Return.
+* **Standard (D-pad & B)**: Classic joystick where D-pad Up or Face B jumps and Face Y fires (Super Mario World layout: fire left of jump), X is Space, and A is Return.
 * **Platformer (Btn B Jump)**: Pure button jump layout for platformers (*Giana Sisters*, *Turrican*, *Mayhem in Monsterland*). Button B is exclusively Jump (Up), disabling D-pad Up jump.
 * **Driving (L=Brake, R=Gas)**: Dedicated racing layout. Right trigger is Gas (Up), Left trigger is Brake/Reverse (Down).
 
@@ -134,8 +134,10 @@ The core features full, native in-core `.d64` support with on-the-fly GCR bitstr
   * Face buttons: `Space` (A), `N` (B), `Y` (X), `2` (Y)
   * Start: `Commodore (C=)` key
 * **Base Face Buttons**:
+  * Button Y: Fire
+  * Button B: Jump (Up)
   * Button X: `Space`
-  * Button Y: `Return`
+  * Button A: `Return`
 
 ##### Windows
 
@@ -181,9 +183,10 @@ virtual keyboard).
 The gamepad is mapped to the C64 joystick port as follows
 
 - **dpad** - as expected
-- **face-a** - fire button
-- **face-b** - second fire button
-- **face-x** - third fire button
+- **face-y** - fire button
+- **face-b** - jump (joystick up)
+- **face-x** - Space
+- **face-a** - Return
 
 Pressing **left-of-analogue** brings up (toggles) the on-screen-display
 containing a virtual keyboard and a small menu system for settings.

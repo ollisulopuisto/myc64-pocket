@@ -514,7 +514,7 @@ module core_top (
 
   reg [6:0] joystick1;
 
-  // cont1_key_s bits: 0: Up, 1: Down, 2: Left, 3: Right, 4: Fire/Face A, 5: Face B, 6: Face X, 7: Face Y, 8: Trig L, 9: Trig R
+  // cont1_key_s bits: 0: Up, 1: Down, 2: Left, 3: Right, 4: Face A, 5: Face B (Jump), 6: Face X, 7: Face Y (Fire), 8: Trig L, 9: Trig R
   // control_mode:
   //   2'b00: Standard (D-pad Up | Face B)
   //   2'b01: Platformer (Face B only, D-pad Up disabled)
@@ -529,10 +529,10 @@ module core_top (
     case (c64_ctrl[2:1])
       2'b01: begin
         // bit 0: Up, bit 1: Down, bit 2: Left, bit 3: Right, bit 4: Fire 1, bits 5-6: POT
-        joystick1 = {2'b00, cont1_key_s[4], cont1_key_s[3:2], joy1_down, joy1_up};
+        joystick1 = {2'b00, cont1_key_s[7], cont1_key_s[3:2], joy1_down, joy1_up};
       end
       2'b10: begin
-        joystick1 = {2'b00, cont2_key_s[4:1], cont2_key_s[0] | cont2_key_s[5]};
+        joystick1 = {2'b00, cont2_key_s[7], cont2_key_s[3:1], cont2_key_s[0] | cont2_key_s[5]};
       end
       default: begin
         joystick1 = 0;
@@ -545,10 +545,10 @@ module core_top (
   always @* begin
     case (c64_ctrl[4:3])
       2'b01: begin
-        joystick2 = {2'b00, cont1_key_s[4], cont1_key_s[3:2], joy1_down, joy1_up};
+        joystick2 = {2'b00, cont1_key_s[7], cont1_key_s[3:2], joy1_down, joy1_up};
       end
       2'b10: begin
-        joystick2 = {2'b00, cont2_key_s[4:1], cont2_key_s[0] | cont2_key_s[5]};
+        joystick2 = {2'b00, cont2_key_s[7], cont2_key_s[3:1], cont2_key_s[0] | cont2_key_s[5]};
       end
       default: begin
         joystick2 = 0;

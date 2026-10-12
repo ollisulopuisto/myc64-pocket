@@ -62,9 +62,9 @@ static inline uint64_t pocket_c64_process_shortcuts(uint32_t cont1_key, bool *su
         }
     } else {
         if (suppress_joystick) *suppress_joystick = false;
-        // Unmodified: X -> Space, Y -> Return
+        // Unmodified: X -> Space, A -> Return (Y is fire, B is jump)
         if (btn_x) mask |= C64_KEYB_MASK_KEY(C64_KEY_SPACE);
-        if (btn_y) mask |= C64_KEYB_MASK_KEY(C64_KEY_RETURN);
+        if (btn_a) mask |= C64_KEYB_MASK_KEY(C64_KEY_RETURN);
     }
 
     return mask;
