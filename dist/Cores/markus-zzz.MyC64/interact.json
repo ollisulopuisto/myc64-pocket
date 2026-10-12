@@ -37,7 +37,7 @@
         }
       },
       {
-        "name": "D-Pad Up (Jump)",
+        "name": "Control Mode",
         "id": 2,
         "type": "list",
         "enabled": true,
@@ -46,8 +46,9 @@
         "persist": true,
         "defaultval": 0,
         "options": [
-          { "value": 0, "name": "Enabled (D-pad & B)" },
-          { "value": 1, "name": "Disabled (Button B only)" }
+          { "value": 0, "name": "Standard (D-pad & B)" },
+          { "value": 1, "name": "Platformer (Btn B Jump)" },
+          { "value": 2, "name": "Driving (L=Brake, R=Gas)" }
         ]
       },
       {
