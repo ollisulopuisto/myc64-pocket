@@ -319,6 +319,9 @@ module core_top (
       32'hF80020xx: begin
         bridge_rd_data <= dataslot_table_rd_data;
       end
+      32'hBxxxxxxx: begin
+        bridge_rd_data <= ss_bridge_rd_data;
+      end
       default: begin
         bridge_rd_data <= cmd_bridge_rd_data;
       end
@@ -368,7 +371,15 @@ module core_top (
       .i_cpu_addr (cpu_mem_addr),
       .i_cpu_wdata(cpu_mem_wdata),
       .i_cpu_wstrb(cpu_mem_wstrb),
-      .o_cpu_rdata(bridge_rdata)
+      .o_cpu_rdata(bridge_rdata),
+
+      .ss_req_tgl (ss_req_tgl),
+      .ss_req_op  (ss_req_op),
+      .ss_ack_tgl (ss_ack_tgl),
+      .ss_save_res(ss_save_res),
+      .ss_load_res(ss_load_res),
+      .ss_addr    (32'hB000_0000),
+      .ss_size    (SS_SIZE)
   );
 
   //
@@ -404,6 +415,12 @@ module core_top (
 
   reg [2:0] tk;
   wire sys_ce;  // driven by the warp block near the end of the module
+  reg ss_pause;  // savestate: system stopped while the Pocket reads/writes it
+  wire ss_req_tgl, ss_req_op;
+  reg ss_ack_tgl;
+  reg [1:0] ss_save_res, ss_load_res;
+  wire [31:0] ss_bridge_rd_data;
+  localparam [31:0] SS_SIZE = 32'h0002_0000;
   reg warp_active;
   always @(posedge clk_32mhz) begin
     if (rst) tk <= 0;
@@ -774,26 +791,47 @@ module core_top (
     end
 
     if (!ext_ram_we) ext_ram_done <= 0;
-    else if (ext_ram_we_r && sys_ph1_en) ext_ram_done <= 1;
+    else if ((ext_ram_we_r && sys_ph1_en) || ss_pause) ext_ram_done <= 1;
   end
 
 
   //
   // Memories for MyC64
   //
-  spram #(
-      .aw(16),
-      .dw(8)
-  ) u_c64_main_ram (
-      .clk (clk_32mhz),
-      .rst (rst),
-      .ce  (1'b1),
-      .oe  (1'b1),
-      .addr(ext_ram_we_r ? ext_addr : c64_bus_addr),
-      .do  (c64_ram_rdata),
-      .di  (ext_ram_we_r ? ext_data : c64_ram_wdata),
-      .we  (ext_ram_we_r | c64_ram_we)
-  );
+  // C64 main RAM as four byte lanes: port A is the C64 (and BIOS) at
+  // clk_32mhz, port B the savestate window on the bridge (0xB001_0000).
+  // While paused the C64's held bus must not keep writing over a load.
+  wire [15:0] c64_ram_addr = ext_ram_we_r ? ext_addr[15:0] : c64_bus_addr;
+  wire [7:0] c64_ram_din = ext_ram_we_r ? ext_data : c64_ram_wdata;
+  wire c64_ram_wr = ext_ram_we_r | (c64_ram_we & ~ss_pause);
+  reg [1:0] c64_ram_lane_q;
+  always @(posedge clk_32mhz) c64_ram_lane_q <= c64_ram_addr[1:0];
+  wire [31:0] c64_ram_a_dout;
+  wire [31:0] c64_ram_b_dout;
+  wire ss_ram_bridge_wr = bridge_wr && (bridge_addr[31:16] == 16'hB001);
+  genvar ri;
+  generate
+    for (ri = 0; ri < 4; ri = ri + 1) begin : c64_ram_lane
+      bram_block_dp #(
+          .DATA(8),
+          .ADDR(14)
+      ) u_lane (
+          .a_clk (clk_32mhz),
+          .a_wr  (c64_ram_wr && (c64_ram_addr[1:0] == ri)),
+          .a_addr(c64_ram_addr[15:2]),
+          .a_din (c64_ram_din),
+          .a_dout(c64_ram_a_dout[ri*8+7:ri*8]),
+
+          // Bridge word = 4 consecutive bytes, first byte in bits 31:24
+          .b_clk (clk_74a),
+          .b_wr  (ss_ram_bridge_wr),
+          .b_addr(bridge_addr[15:2]),
+          .b_din (bridge_wr_data[31-ri*8:24-ri*8]),
+          .b_dout(c64_ram_b_dout[31-ri*8:24-ri*8])
+      );
+    end
+  endgenerate
+  assign c64_ram_rdata = c64_ram_a_dout[c64_ram_lane_q*8+:8];
 
   wire [7:0] c64_rom_char_data;
   spram #(
@@ -875,7 +913,7 @@ module core_top (
   // phases of the C64 core. Since clk_8mhz and clk_32mhz are 'related
   // clocks' the tools should take care of the rest (I hope).
   wire psram_wen;
-  assign psram_wen = clk_32mhz_1mhz_ph12_en & (ext_rom_cart_we | c64_cart_we);
+  assign psram_wen = clk_32mhz_1mhz_ph12_en & (ext_rom_cart_we | (c64_cart_we & ~ss_pause));
   wire psram_ren;
   assign psram_ren = clk_32mhz_1mhz_ph12_en & ~(ext_rom_cart_we | c64_cart_we);
 
@@ -927,7 +965,7 @@ module core_top (
       .addr(c1541_bus_addr),
       .do  (c1541_ram_rdata),
       .di  (c1541_ram_wdata),
-      .we  (c1541_ram_we)
+      .we  (c1541_ram_we & ~ss_pause)
   );
 
   spram #(
@@ -1481,7 +1519,7 @@ module core_top (
     if (rst) begin
       vid_locked_r <= 1;
       relock_tmr <= 0;
-    end else if (warp_active) begin
+    end else if (warp_active || ss_pause) begin
       vid_locked_r <= 0;
       relock_tmr <= 0;
     end else if (!vid_locked_r) begin
@@ -1491,9 +1529,121 @@ module core_top (
   end
   wire relock_now = !vid_locked_r && (relock_match || (relock_tmr == RELOCK_TIMEOUT_TICKS && ce_1x));
 
-  assign sys_ce = warp_active ? !warp_freeze : (vid_locked_r ? ce_1x : relock_now);
+  assign sys_ce = ss_pause ? 1'b0 :
+                  warp_active ? !warp_freeze : (vid_locked_r ? ce_1x : relock_now);
   assign vid_locked = vid_locked_r;
   assign audio_mute = !vid_locked_r;
+
+  //
+  // Savestates (stage A: plumbing; the blob holds a header page and C64 RAM)
+  //
+  // Window 0xB000_0000..0xB001_FFFF on the bridge:
+  //   0xB000_0000  header: magic "C64S", format version
+  //   0xB001_0000  C64 RAM, 64 KB (live dual-port, see u_c64_main_ram)
+  // Save: pause, report done, stay paused until the Pocket has read the last
+  // word (or ~2 s). Load: the first write into the window pauses; the 0x00A4
+  // start checks the header and resumes. Resume relocks video like warp does.
+  //
+  localparam [31:0] SS_MAGIC = 32'h4336_3453;  // "C64S"
+  localparam [31:0] SS_VERSION = 32'd1;
+
+  // Header page (bridge domain): reads return the live header, writes during a
+  // load are kept for the check.
+  reg [31:0] ss_hdr_rd;
+  reg [31:0] ss_loaded_magic, ss_loaded_version;
+  always @(posedge clk_74a) begin
+    case (bridge_addr[3:2])
+      2'd0: ss_hdr_rd <= SS_MAGIC;
+      2'd1: ss_hdr_rd <= SS_VERSION;
+      default: ss_hdr_rd <= 32'd0;
+    endcase
+    if (bridge_wr && bridge_addr[31:16] == 16'hB000) begin
+      if (bridge_addr[15:0] == 16'h0000) ss_loaded_magic <= bridge_wr_data;
+      if (bridge_addr[15:0] == 16'h0004) ss_loaded_version <= bridge_wr_data;
+    end
+  end
+  reg ss_rd_ram;
+  always @(posedge clk_74a) ss_rd_ram <= bridge_addr[16];
+  assign ss_bridge_rd_data = ss_rd_ram ? c64_ram_b_dout : ss_hdr_rd;
+
+  // Bridge-domain events toggled into the system domain
+  reg ss_last_rd_tgl = 0;  // Pocket read the last word of the blob
+  reg ss_wr_seen_tgl = 0;  // Pocket wrote into the window (a load begins)
+  always @(posedge clk_74a) begin
+    if (bridge_rd && bridge_addr == 32'hB000_0000 + SS_SIZE - 4) ss_last_rd_tgl <= ~ss_last_rd_tgl;
+    if (bridge_wr && bridge_addr[31:28] == 4'hB) ss_wr_seen_tgl <= ~ss_wr_seen_tgl;
+  end
+
+  wire ss_req_tgl_s, ss_req_op_s, ss_last_rd_s, ss_wr_seen_s;
+  synch_3 s_ss_req (ss_req_tgl, ss_req_tgl_s, clk_32mhz);
+  synch_3 s_ss_op (ss_req_op, ss_req_op_s, clk_32mhz);
+  synch_3 s_ss_lrd (ss_last_rd_tgl, ss_last_rd_s, clk_32mhz);
+  synch_3 s_ss_wrs (ss_wr_seen_tgl, ss_wr_seen_s, clk_32mhz);
+  reg ss_req_seen, ss_last_rd_seen, ss_wr_seen;
+  reg [2:0] ss_req_dly;  // let ss_req_op settle after the toggle
+  reg [26:0] ss_tmr;     // bit 26 = ~2 s at 32 MHz
+  reg ss_hold_read;      // save done, waiting for the Pocket to read it
+  reg ss_hold_load;      // blob being written, waiting for the load start
+
+  always @(posedge clk_32mhz) begin
+    if (rst) begin
+      ss_pause <= 0;
+      ss_ack_tgl <= 0;
+      ss_save_res <= 0;
+      ss_load_res <= 0;
+      ss_req_seen <= 0;
+      ss_last_rd_seen <= 0;
+      ss_wr_seen <= 0;
+      ss_req_dly <= 0;
+      ss_tmr <= 0;
+      ss_hold_read <= 0;
+      ss_hold_load <= 0;
+    end else begin
+      ss_tmr <= (ss_hold_read || ss_hold_load) ? ss_tmr + 1'b1 : 27'd0;
+
+      // A write into the window: a load is coming, stop the system
+      if (ss_wr_seen_s != ss_wr_seen) begin
+        ss_wr_seen <= ss_wr_seen_s;
+        ss_pause <= 1;
+        ss_hold_load <= 1;
+        ss_hold_read <= 0;
+      end
+
+      if (ss_last_rd_s != ss_last_rd_seen) begin
+        ss_last_rd_seen <= ss_last_rd_s;
+        if (ss_hold_read) begin
+          ss_hold_read <= 0;
+          ss_pause <= 0;
+        end
+      end
+
+      if (ss_req_tgl_s != ss_req_seen && ss_req_dly != 3'd7) ss_req_dly <= ss_req_dly + 1'b1;
+      if (ss_req_tgl_s != ss_req_seen && ss_req_dly == 3'd7) begin
+        ss_req_seen <= ss_req_tgl_s;
+        ss_req_dly <= 0;
+        if (!ss_req_op_s) begin
+          // Save: everything in the blob is live memory, so pausing is enough
+          ss_pause <= 1;
+          ss_hold_read <= 1;
+          ss_hold_load <= 0;
+          ss_save_res <= 2'd2;
+        end else begin
+          ss_hold_load <= 0;
+          ss_hold_read <= 0;
+          ss_pause <= 0;
+          ss_load_res <= (ss_loaded_magic == SS_MAGIC && ss_loaded_version == SS_VERSION) ? 2'd2 : 2'd3;
+        end
+        ss_ack_tgl <= ss_req_tgl_s;
+      end
+
+      // Never stay stopped if the Pocket goes away mid-transfer
+      if (ss_tmr[26]) begin
+        ss_hold_read <= 0;
+        ss_hold_load <= 0;
+        ss_pause <= 0;
+      end
+    end
+  end
 
 endmodule
 

@@ -44,8 +44,31 @@ module core_bridge_cmd (
     input  wire [31:0] i_cpu_addr,
     input  wire [31:0] i_cpu_wdata,
     input  wire [ 3:0] i_cpu_wstrb,
-    output reg  [31:0] o_cpu_rdata
+    output reg  [31:0] o_cpu_rdata,
+
+    // Savestates (APF host commands 0x00A0 / 0x00A4). ss_req_tgl toggles on a
+    // start (ss_req_op 0 = save, 1 = load); the core answers by toggling
+    // ss_ack_tgl once ss_save_res / ss_load_res hold the outcome
+    // (0 = none, 2 = done, 3 = error). Inputs are from another clock domain.
+    output reg         ss_req_tgl,
+    output reg         ss_req_op,
+    input  wire        ss_ack_tgl,
+    input  wire [ 1:0] ss_save_res,
+    input  wire [ 1:0] ss_load_res,
+    input  wire [31:0] ss_addr,
+    input  wire [31:0] ss_size
 );
+
+  wire ss_ack_s;
+  wire [1:0] ss_save_res_s, ss_load_res_s;
+  synch_3 s_ss_ack (ss_ack_tgl, ss_ack_s, clk);
+  synch_3 #(.WIDTH(2)) s_ss_save (ss_save_res, ss_save_res_s, clk);
+  synch_3 #(.WIDTH(2)) s_ss_load (ss_load_res, ss_load_res_s, clk);
+  wire ss_pending = (ss_req_tgl != ss_ack_s);
+  initial begin
+    ss_req_tgl = 0;
+    ss_req_op = 0;
+  end
 
   // handle endianness
   reg  [31:0] bridge_wr_data_in;
@@ -304,19 +327,29 @@ module core_bridge_cmd (
           end
           16'h00A0: begin
             // Savestate: Start/Query
-            host_40 <= 0;
-            host_44 <= 0;
-            host_48 <= 0;
-
-            hstate  <= ST_DONE_OK;
+            host_40 <= 1;  // supported
+            host_44 <= ss_addr;
+            host_48 <= ss_size;
+            if (host_20[0] && !ss_pending) begin
+              ss_req_tgl <= ~ss_req_tgl;
+              ss_req_op <= 0;
+              host_resultcode <= 1;  // busy
+            end else if (ss_pending) host_resultcode <= 1;
+            else host_resultcode <= {14'd0, ss_save_res_s};
+            hstate <= ST_DONE_CODE;
           end
           16'h00A4: begin
             // Savestate: Load/Query
-            host_40 <= 0;
-            host_44 <= 0;
-            host_48 <= 0;
-
-            hstate  <= ST_DONE_OK;
+            host_40 <= 1;  // supported
+            host_44 <= ss_addr;
+            host_48 <= ss_size;  // max load size
+            if (host_20[0] && !ss_pending) begin
+              ss_req_tgl <= ~ss_req_tgl;
+              ss_req_op <= 1;
+              host_resultcode <= 1;  // busy
+            end else if (ss_pending) host_resultcode <= 1;
+            else host_resultcode <= {14'd0, ss_load_res_s};
+            hstate <= ST_DONE_CODE;
           end
           16'h00B0: begin
             // OS Notify: Menu State
