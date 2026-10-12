@@ -37,6 +37,20 @@
         }
       },
       {
+        "name": "D-Pad Up (Jump)",
+        "id": 2,
+        "type": "list",
+        "enabled": true,
+        "address": "0xA0000008",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "Enabled (D-pad & B)" },
+          { "value": 1, "name": "Disabled (Button B only)" }
+        ]
+      },
+      {
         "name": "Base: X / Y buttons",
         "id": 200,
         "type": "list",

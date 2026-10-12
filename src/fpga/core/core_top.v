@@ -499,11 +499,13 @@ module core_top (
 
   reg [6:0] joystick1;
 
+  wire joy_up_btn = disable_dpad_up ? cont1_key_s[5] : (cont1_key_s[0] | cont1_key_s[5]);
+
   always @* begin
     case (c64_ctrl[2:1])
       2'b01: begin
-        // bit 0: UP | Face B (Jump), bits 1-4: Down, Left, Right, Fire 1, bits 5-6: POT 0
-        joystick1 = {2'b00, cont1_key_s[4:1], cont1_key_s[0] | cont1_key_s[5]};
+        // bit 0: UP (or Button B only if D-pad Up disabled), bits 1-4: Down, Left, Right, Fire 1
+        joystick1 = {2'b00, cont1_key_s[4:1], joy_up_btn};
       end
       2'b10: begin
         joystick1 = {2'b00, cont2_key_s[4:1], cont2_key_s[0] | cont2_key_s[5]};
@@ -519,7 +521,7 @@ module core_top (
   always @* begin
     case (c64_ctrl[4:3])
       2'b01: begin
-        joystick2 = {2'b00, cont1_key_s[4:1], cont1_key_s[0] | cont1_key_s[5]};
+        joystick2 = {2'b00, cont1_key_s[4:1], joy_up_btn};
       end
       2'b10: begin
         joystick2 = {2'b00, cont2_key_s[4:1], cont2_key_s[0] | cont2_key_s[5]};
@@ -1019,10 +1021,12 @@ module core_top (
   //
   reg [7:0] osd_offset_x; // XXX: Unguarded CDC
   reg [7:0] osd_offset_y;
+  reg       disable_dpad_up;
 
   initial begin
     osd_offset_x <= 1;
     osd_offset_y <= 1;
+    disable_dpad_up <= 0;
   end
 
   always @(posedge clk_74a) begin
@@ -1031,6 +1035,7 @@ module core_top (
       case (bridge_addr)
         32'hA000_0000: osd_offset_x <= bridge_wr_data;
         32'hA000_0004: osd_offset_y <= bridge_wr_data;
+        32'hA000_0008: disable_dpad_up <= bridge_wr_data[0];
       endcase
     end
   end
