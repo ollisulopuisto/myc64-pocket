@@ -429,15 +429,17 @@ module core_top (
   reg        audgen_lrck;
   reg        audgen_dac;
   reg [31:0] audgen_shift;
+  wire [15:0] sid_audio_l_16 = sid_audio_l[17:2];
+  wire [15:0] sid_audio_r_16 = sid_dual_s ? sid_audio_r[17:2] : sid_audio_l[17:2];
   always @(negedge audgen_sclk) begin
     audgen_dac <= audgen_shift[31];
     audgen_shift <= {audgen_shift[30:0], 1'b0};
     // 48khz * 64
     audgen_lrck_cnt <= audgen_lrck_cnt + 1'b1;
     if (audgen_lrck_cnt == 31) begin
-      // switch channels
+      // switch channels: LRCK 0 = Left, LRCK 1 = Right
       audgen_lrck  <= ~audgen_lrck;
-      audgen_shift <= {sid_wave, 16'h0};  // XXX: sid_wave coming from different clock domain!
+      audgen_shift <= audgen_lrck ? {sid_audio_l_16, 16'h0} : {sid_audio_r_16, 16'h0};
     end
   end
 
@@ -494,8 +496,20 @@ module core_top (
   synch_3 #(.WIDTH(16)) s_cont3_trig (cont3_trig, cont3_trig_s, clk_8mhz);
   synch_3 #(.WIDTH(16)) s_cont4_trig (cont4_trig, cont4_trig_s, clk_8mhz);
 
+  wire sid_model_s;
+  wire sid_dual_s;
+  synch_3 s_sid_model (sid_model, sid_model_s, clk_8mhz);
+  synch_3 s_sid_dual  (sid_dual,  sid_dual_s,  clk_8mhz);
+
   wire [23:0] c64_color_rgb;
-  wire [15:0] sid_wave;
+  wire [17:0] sid_audio_l;
+  wire [17:0] sid_audio_r;
+  wire  [7:0] sid_data_out;
+  wire        c64_sid_cs;
+  wire        c64_sid2_cs;
+  wire        c64_sid_we;
+  wire  [4:0] c64_sid_addr;
+  wire  [7:0] c64_sid_data;
 
   reg [6:0] joystick1;
 
@@ -569,7 +583,12 @@ module core_top (
       .o_vid_hsync(video_hs),
       .o_vid_vsync(video_vs),
       .o_vid_en(video_de),
-      .o_wave(sid_wave),
+      .i_sid_data(sid_data_out),
+      .o_sid_cs(c64_sid_cs),
+      .o_sid2_cs(c64_sid2_cs),
+      .o_sid_we(c64_sid_we),
+      .o_sid_addr(c64_sid_addr),
+      .o_sid_data(c64_sid_data),
       .i_keyboard_mask(keyboard_mask),
       .i_joystick1(joystick1),
       .i_joystick2(joystick2),
@@ -596,6 +615,43 @@ module core_top (
       .o_debug_6510_addr(debug_c64_cpu_addr),
       .o_debug_6510_data(debug_c64_cpu_data),
       .o_debug_6510_regs(debug_c64_cpu_regs)
+  );
+
+  //
+  // reSIDfp SystemVerilog Dual-SID (MOS 6581 / MOS 8580 selectable)
+  //
+  wire [1:0] sid_chip_cs = { (sid_dual_s & c64_sid2_cs), c64_sid_cs };
+  wire [1:0] sid_chip_mode = { sid_model_s, sid_model_s };
+
+  sid_top #(
+      .MULTI_FILTERS(1),
+      .DUAL(1)
+  ) u_sid (
+      .reset      (ph_synced_rst),
+      .clk        (clk_8mhz),
+      .ce_1m      (clk_8mhz_1mhz_ph2_en),
+      .cs         (sid_chip_cs),
+      .we         (c64_sid_we),
+      .addr       (c64_sid_addr),
+      .data_in    (c64_sid_data),
+      .data_out   (sid_data_out),
+      .fc_offset_l(13'd0),
+      .pot_x_l    (8'hff),
+      .pot_y_l    (8'hff),
+      .ext_in_l   (18'sd0),
+      .audio_l    (sid_audio_l),
+      .fc_offset_r(13'd0),
+      .pot_x_r    (8'hff),
+      .pot_y_r    (8'hff),
+      .ext_in_r   (18'sd0),
+      .audio_r    (sid_audio_r),
+      .filter_en  (2'b11),
+      .mode       (sid_chip_mode),
+      .cfg        (4'b0000),
+      .ld_clk     (1'b0),
+      .ld_addr    (12'd0),
+      .ld_data    (16'd0),
+      .ld_wr      (1'b0)
   );
 
   wire [15:0] c1541_bus_addr;
@@ -1033,11 +1089,15 @@ module core_top (
   reg [7:0] osd_offset_x; // XXX: Unguarded CDC
   reg [7:0] osd_offset_y;
   reg [1:0] control_mode; // 0: Standard, 1: Platformer (No D-Pad Up), 2: Driving (L=Down, R=Up)
+  reg       sid_model;    // 0: 6581, 1: 8580
+  reg       sid_dual;     // 0: Mono, 1: Dual SID (Stereo)
 
   initial begin
     osd_offset_x <= 1;
     osd_offset_y <= 1;
     control_mode <= 0;
+    sid_model    <= 0; // Default to 6581
+    sid_dual     <= 0; // Default to Mono
   end
 
   always @(posedge clk_74a) begin
@@ -1047,6 +1107,8 @@ module core_top (
         32'hA000_0000: osd_offset_x <= bridge_wr_data;
         32'hA000_0004: osd_offset_y <= bridge_wr_data;
         32'hA000_0008: control_mode <= bridge_wr_data[1:0];
+        32'hA000_000C: sid_model    <= bridge_wr_data[0];
+        32'hA000_0010: sid_dual     <= bridge_wr_data[0];
       endcase
     end
   end
