@@ -3,7 +3,7 @@
         "magic": "APF_VER_1",
         "data_slots": [
     {
-        "name": "& Start CRT",
+        "name": "Load & Start CRT",
         "id": "0",
         "required": false,
         "deferload": true,
@@ -12,7 +12,7 @@
         "extensions": ["crt"]
     },
     {
-        "name": "& Start PRG",
+        "name": "Load & Start PRG",
         "id": "1",
         "required": false,
         "deferload": true,
