@@ -27,22 +27,22 @@
                     },
                     {
                         "id": 4,
-                        "name": "C64 Shortcut (Hold)",
+                        "name": "Shortcut",
                         "key": "pad_trig_l"
                     },
                     {
                         "id": 5,
-                        "name": "2nd Shortcut (Hold)",
+                        "name": "Shift",
                         "key": "pad_trig_r"
                     },
                     {
                         "id": 6,
-                        "name": "C64 On-Screen Keyboard",
+                        "name": "Keyboard",
                         "key": "pad_btn_select"
                     },
                     {
                         "id": 7,
-                        "name": "Run / Stop",
+                        "name": "Run/Stop",
                         "key": "pad_btn_start"
                     }
                 ]
