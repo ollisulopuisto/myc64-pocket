@@ -77,6 +77,7 @@ void keyboard_virt_handle() {
       sel_row = N_ROWS - 1;
     }
     sel_col = MIN(sel_col, row_length(sel_row) - 1);
+    osd_dirty = 1;
   } else if (KEYB_POSEDGE(dpad_down)) {
     if (sel_row < N_ROWS - 1) {
       sel_row++;
@@ -85,16 +86,19 @@ void keyboard_virt_handle() {
       sel_col = prev_cols[sel_row];
     }
     sel_col = MIN(sel_col, row_length(sel_row) - 1);
+    osd_dirty = 1;
   } else if (KEYB_POSEDGE(dpad_left)) {
     if (sel_col > 0)
       sel_col--;
     else
       sel_col = row_length(sel_row) - 1;
+    osd_dirty = 1;
   } else if (KEYB_POSEDGE(dpad_right)) {
     if (sel_col < row_length(sel_row) - 1)
       sel_col++;
     else
       sel_col = 0;
+    osd_dirty = 1;
   }
 
   prev_cols[sel_row] = sel_col;
@@ -107,8 +111,10 @@ void keyboard_virt_handle() {
 
   if (KEYB_POSEDGE(face_x)) {
     sticky_keys ^= C64_KEYB_MASK_KEY(e->ports);
+    osd_dirty = 1;
   } else if (KEYB_POSEDGE(face_y)) {
     sticky_keys = 0;
+    osd_dirty = 1;
   }
 
   c64_keyb_mask |= sticky_keys;

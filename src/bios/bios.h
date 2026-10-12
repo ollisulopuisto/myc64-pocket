@@ -128,6 +128,7 @@ void bridge_ds_read(uint16_t slot_id, uint32_t offset, uint32_t length,
 typedef enum { OSD_OFF, OSD_FULL, OSD_STATUS_BAR } osd_mode_t;
 
 extern osd_mode_t osd_mode;
+extern volatile uint8_t osd_dirty;
 
 void osd_clear();
 unsigned osd_put_char(int x, int y, char c, int invert);

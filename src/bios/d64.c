@@ -291,8 +291,11 @@ void d64_irq() {
   }
 
   if (!d64_loaded) return;
-
   d64_autoboot_poll();
+
+  uint8_t prev_led = d64_led_on;
+  uint8_t prev_motor = d64_motor_on;
+  uint8_t prev_track = d64_track_no;
 
   uint32_t status = *C1541_STATUS;
   uint8_t req_track_no = status & 0x7f;
@@ -306,6 +309,8 @@ void d64_irq() {
 
   if (osd_mode == OSD_OFF || osd_mode == OSD_STATUS_BAR) {
     if (d64_led_on || d64_motor_on) {
+      if (osd_mode != OSD_STATUS_BAR)
+        osd_dirty = 1;
       osd_mode = OSD_STATUS_BAR;
       d64_status_bar_timeout = timer_ticks + 300;
     }
@@ -313,6 +318,11 @@ void d64_irq() {
     if (osd_mode == OSD_STATUS_BAR && timer_ticks > d64_status_bar_timeout) {
       osd_mode = OSD_OFF;
     }
+  }
+
+  if (osd_mode == OSD_STATUS_BAR &&
+      (prev_led != d64_led_on || prev_motor != d64_motor_on || prev_track != d64_track_no)) {
+    osd_dirty = 1;
   }
 }
 

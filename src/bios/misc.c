@@ -40,11 +40,15 @@ void misc_reset_core(uint8_t cart_type) {
 
 void misc_handle() {
   if (KEYB_POSEDGE(dpad_up)) {
-    if (sel_row > 0)
+    if (sel_row > 0) {
       sel_row--;
+      osd_dirty = 1;
+    }
   } else if (KEYB_POSEDGE(dpad_down)) {
-    if (sel_row < 2)
+    if (sel_row < 2) {
       sel_row++;
+      osd_dirty = 1;
+    }
   }
 
   if (KEYB_POSEDGE(face_a)) {
@@ -54,9 +58,11 @@ void misc_handle() {
       break;
     case 1:
       joystick1 = joystick1 < 2 ? joystick1 + 1 : 0;
+      osd_dirty = 1;
       break;
     case 2:
       joystick2 = joystick2 < 2 ? joystick2 + 1 : 0;
+      osd_dirty = 1;
       break;
     }
   }

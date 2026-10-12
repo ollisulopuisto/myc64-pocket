@@ -75,6 +75,11 @@ void g64_irq() {
 
   if (!g64_loaded)
     return;
+
+  uint8_t prev_led = led_on;
+  uint8_t prev_motor = motor_on;
+  uint8_t prev_track = track_no;
+
   uint32_t status = *C1541_STATUS;
   uint8_t req_track_no = status & 0x7f;
   led_on = (status >> 7) & 1;
@@ -86,6 +91,8 @@ void g64_irq() {
 
   if (osd_mode == OSD_OFF || osd_mode == OSD_STATUS_BAR) {
     if (led_on || motor_on) {
+      if (osd_mode != OSD_STATUS_BAR)
+        osd_dirty = 1;
       osd_mode = OSD_STATUS_BAR;
       status_bar_timeout = timer_ticks + 300;
     }
@@ -93,6 +100,11 @@ void g64_irq() {
     if (osd_mode == OSD_STATUS_BAR && timer_ticks > status_bar_timeout) {
       osd_mode = OSD_OFF;
     }
+  }
+
+  if (osd_mode == OSD_STATUS_BAR &&
+      (prev_led != led_on || prev_motor != motor_on || prev_track != track_no)) {
+    osd_dirty = 1;
   }
 }
 

@@ -68,10 +68,13 @@ osd_mode_t osd_mode;
 static uint32_t joy_notify_timeout = 0;
 static uint8_t joy_notify_port = 0;
 
+volatile uint8_t osd_dirty = 1;
+
 void joy_swap_notify(uint8_t port) {
   joy_notify_port = port;
   joy_notify_timeout = timer_ticks + 250; // show message for ~2.5 seconds
   osd_mode = OSD_STATUS_BAR;
+  osd_dirty = 1;
 }
 
 int main(void) {
@@ -112,6 +115,7 @@ int main(void) {
     if (osd_mode_prev != osd_mode) {
       osd_clear();
       osd_mode_prev = osd_mode;
+      osd_dirty = 1;
     }
     switch (osd_mode) {
     case OSD_FULL: {
@@ -119,26 +123,33 @@ int main(void) {
       if (osd_idx_prev != osd_idx_tmp) {
         osd_clear();
         osd_idx_prev = osd_idx_tmp;
+        osd_dirty = 1;
       }
-      // Draw tab bar
-      int offset = 0;
-      for (int i = 0; i < N_OSD_TABS; i++) {
-        offset = osd_put_str(offset, 1, osd_tabs[i].name, i == osd_idx_tmp);
-        offset += 8;
+      if (osd_dirty) {
+        osd_dirty = 0;
+        // Draw tab bar
+        int offset = 0;
+        for (int i = 0; i < N_OSD_TABS; i++) {
+          offset = osd_put_str(offset, 1, osd_tabs[i].name, i == osd_idx_tmp);
+          offset += 8;
+        }
+        // Handle active tab
+        const struct osd_tab *tab = &osd_tabs[osd_idx_tmp];
+        if (tab->draw)
+          tab->draw();
       }
-      // Handle active tab
-      const struct osd_tab *tab = &osd_tabs[osd_idx_tmp];
-      if (tab->draw)
-        tab->draw();
       break;
     }
     case OSD_STATUS_BAR:
-      if (timer_ticks < joy_notify_timeout) {
-        osd_printf(0, 0, "[C64 JOYSTICK PORT %d ACTIVE] ", joy_notify_port);
-      } else if (d64_loaded) {
-        d64_draw_status_bar();
-      } else {
-        g64_draw_status_bar();
+      if (osd_dirty) {
+        osd_dirty = 0;
+        if (timer_ticks < joy_notify_timeout) {
+          osd_printf(0, 0, "[C64 JOYSTICK PORT %d ACTIVE] ", joy_notify_port);
+        } else if (d64_loaded) {
+          d64_draw_status_bar();
+        } else {
+          g64_draw_status_bar();
+        }
       }
       break;
     case OSD_OFF:
@@ -204,6 +215,7 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
         osd_mode = OSD_OFF;
       } else {
         osd_mode = OSD_FULL;
+        osd_dirty = 1;
       }
       if (osd_mode == OSD_FULL) {
         // Read joystick mapping when entering OSD
@@ -224,9 +236,11 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
     if (KEYB_POSEDGE(trig_l1)) {
       osd_idx--;
       osd_idx = MAX(osd_idx, 0);
+      osd_dirty = 1;
     } else if (KEYB_POSEDGE(trig_r1)) {
       osd_idx++;
       osd_idx = MIN(osd_idx, N_OSD_TABS - 1);
+      osd_dirty = 1;
     }
 
     // Handle active tab
