@@ -744,6 +744,11 @@ set_global_assignment -name VERILOG_SHOW_LMF_MAPPING_MESSAGES OFF
 
 
 set_global_assignment -name SYSTEMVERILOG_FILE core/psram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/sid/sid_voice.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/sid/sid_filter.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/sid/sid_envelope.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/sid/sid_tables.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/sid/sid_top.sv
 set_global_assignment -name VHDL_FILE "core/myc64-rtl/T65/T65_Pack.vhd"
 set_global_assignment -name VHDL_FILE "core/myc64-rtl/T65/T65_MCode.vhd"
 set_global_assignment -name VHDL_FILE "core/myc64-rtl/T65/T65_ALU.vhd"

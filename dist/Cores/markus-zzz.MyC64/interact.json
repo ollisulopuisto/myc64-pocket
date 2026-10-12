@@ -52,6 +52,34 @@
         ]
       },
       {
+        "name": "SID Model",
+        "id": 3,
+        "type": "list",
+        "enabled": true,
+        "address": "0xA000000C",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "MOS 6581 (Warm / Filter Dist)" },
+          { "value": 1, "name": "MOS 8580 (Clean / Crisp)" }
+        ]
+      },
+      {
+        "name": "SID Mode",
+        "id": 4,
+        "type": "list",
+        "enabled": true,
+        "address": "0xA0000010",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "Mono (Single SID $D400)" },
+          { "value": 1, "name": "Stereo (Dual SID $D400/$D420)" }
+        ]
+      },
+      {
         "name": "Base: X / Y buttons",
         "id": 200,
         "type": "list",

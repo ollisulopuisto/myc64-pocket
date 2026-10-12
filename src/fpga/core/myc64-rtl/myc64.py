@@ -22,7 +22,6 @@ from amaranth import *
 from cpu6510 import Cpu6510
 from cia import Cia
 from vicii import VicII
-from sid import Sid
 
 class Cartridge(Elaboratable):
   def __init__(self):
@@ -108,7 +107,12 @@ class MyC64(Elaboratable):
     self.o_vid_hsync = Signal()
     self.o_vid_vsync = Signal()
     self.o_vid_en = Signal()
-    self.o_wave = Signal(16)
+    self.i_sid_data = Signal(8)
+    self.o_sid_cs = Signal()
+    self.o_sid2_cs = Signal()
+    self.o_sid_we = Signal()
+    self.o_sid_addr = Signal(5)
+    self.o_sid_data = Signal(8)
     self.i_keyboard_mask = Signal(64)
     self.i_joystick1 = Signal(7) # UP,DOWN,LEFT,RIGHT,FIRE1,FIRE2,FIRE3
     self.i_joystick2 = Signal(7)
@@ -141,7 +145,9 @@ class MyC64(Elaboratable):
 
     self.ports = [
         self.i_clk_1mhz_ph1_en, self.i_clk_1mhz_ph2_en,
-        self.o_vid_rgb, self.o_vid_hsync, self.o_vid_vsync, self.o_vid_en, self.o_wave, self.i_keyboard_mask, self.i_joystick1, self.i_joystick2,
+        self.o_vid_rgb, self.o_vid_hsync, self.o_vid_vsync, self.o_vid_en,
+        self.i_sid_data, self.o_sid_cs, self.o_sid2_cs, self.o_sid_we, self.o_sid_addr, self.o_sid_data,
+        self.i_keyboard_mask, self.i_joystick1, self.i_joystick2,
         self.o_bus_addr, self.i_rom_char_data, self.i_rom_basic_data, self.i_rom_kernal_data,
         self.i_ram_main_data, self.o_ram_main_data, self.o_ram_main_we,
         self.o_iec_atn_out, self.i_iec_data_in , self.o_iec_data_out, self.i_iec_clock_in, self.o_iec_clock_out,
@@ -164,9 +170,6 @@ class MyC64(Elaboratable):
     # Vic-II.
     m.submodules.u_vic = u_vic = VicII()
 
-    # SID.
-    m.submodules.u_sid = u_sid = Sid()
-
     # CIA-1.
     m.submodules.u_cia1 = u_cia1 = Cia()
 
@@ -185,6 +188,7 @@ class MyC64(Elaboratable):
     cpu_di = Signal(8)
     ram_cs = Signal()
     sid_cs = Signal()
+    sid2_cs = Signal()
     cia1_cs = Signal()
     cia2_cs = Signal()
     color_cs = Signal()
@@ -238,6 +242,7 @@ class MyC64(Elaboratable):
         ram_cs.eq(0),
         u_vic.i_reg_cs.eq(0),
         sid_cs.eq(0),
+        sid2_cs.eq(0),
         cia1_cs.eq(0),
         cia2_cs.eq(0),
         color_cs.eq(0)
@@ -281,8 +286,12 @@ class MyC64(Elaboratable):
           # IO
           with m.If((0xD000 <= cpu_addr) & (cpu_addr <= 0xD3FF)):  # VIC-II
             m.d.comb += [cpu_di.eq(u_vic.o_reg_data), u_vic.i_reg_cs.eq(~vic_cycle & ~u_vic.o_steal_bus)]
-          with m.Elif((0xD400 <= cpu_addr) & (cpu_addr <= 0xD7FF)):  # SID
-            m.d.comb += [cpu_di.eq(u_sid.o_data), sid_cs.eq(1)]
+          with m.Elif((0xD400 <= cpu_addr) & (cpu_addr <= 0xD7FF)):  # SID 1 & SID 2
+            m.d.comb += [
+                cpu_di.eq(self.i_sid_data),
+                sid_cs.eq(cpu_addr[5] == 0),
+                sid2_cs.eq(cpu_addr[5] == 1)
+            ]
           with m.Elif((0xD800 <= cpu_addr) & (cpu_addr <= 0xDBFF)):  # COLOR-RAM
             m.d.comb += [cpu_di.eq(u_ram_color_rp.data), color_cs.eq(1)]
           with m.Elif((0xDC00 <= cpu_addr) & (cpu_addr <= 0xDCFF)):  # CIA1
@@ -333,11 +342,11 @@ class MyC64(Elaboratable):
         u_vic.i_reg_data.eq(bus_do),
         u_vic.i_reg_we.eq(bus_we),
         # SID
-        u_sid.clk_1mhz_ph1_en.eq(self.i_clk_1mhz_ph2_en),
-        u_sid.i_cs.eq(sid_cs),
-        u_sid.i_addr.eq(bus_addr),
-        u_sid.i_data.eq(bus_do),
-        u_sid.i_we.eq(bus_we),
+        self.o_sid_cs.eq(sid_cs),
+        self.o_sid2_cs.eq(sid2_cs),
+        self.o_sid_addr.eq(bus_addr[0:5]),
+        self.o_sid_data.eq(bus_do),
+        self.o_sid_we.eq(bus_we),
         # CIA-1
         u_cia1.clk_1mhz_ph_en.eq(self.i_clk_1mhz_ph2_en),
         u_cia1.i_cs.eq(cia1_cs),
@@ -385,25 +394,7 @@ class MyC64(Elaboratable):
         Mux(~u_cia1.o_pa[1], self.i_keyboard_mask[8:16], 0) |  #
         Mux(~u_cia1.o_pa[0], self.i_keyboard_mask[0:8], 0)))
 
-    # 2nd and 3rd fire button support
-    # From http://wiki.icomp.de/wiki/DB9-Joystick#C64
-    #
-    # "When the button is not pressed the POT line is floating, which equals a
-    #  large resistance to VCC, and will read as $FF. When the button is pressed
-    #  the POT line is connected to VCC, which equals no resistance to VCC, and
-    #  will read as $00."
-    with m.If(u_cia1.o_pa[6:8] == 0b01):
-      m.d.comb += [
-        u_sid.i_paddle_x.eq(Mux(self.i_joystick1[5], C(0x00, 8), C(0xff, 8))),
-        u_sid.i_paddle_y.eq(Mux(self.i_joystick1[6], C(0x00, 8), C(0xff, 8)))
-      ]
-    with m.Elif(u_cia1.o_pa[6:8] == 0b10):
-      m.d.comb += [
-        u_sid.i_paddle_x.eq(Mux(self.i_joystick2[5], C(0x00, 8), C(0xff, 8))),
-        u_sid.i_paddle_y.eq(Mux(self.i_joystick2[6], C(0x00, 8), C(0xff, 8)))
-      ]
-
-    m.d.comb += [self.o_vid_hsync.eq(u_vic.o_hsync), self.o_vid_vsync.eq(u_vic.o_vsync), self.o_vid_en.eq(u_vic.o_visib), self.o_wave.eq(u_sid.o_wave)]
+    m.d.comb += [self.o_vid_hsync.eq(u_vic.o_hsync), self.o_vid_vsync.eq(u_vic.o_vsync), self.o_vid_en.eq(u_vic.o_visib)]
 
     with m.Switch(u_vic.o_color):
       with m.Case(0x0):
