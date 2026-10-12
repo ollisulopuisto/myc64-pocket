@@ -167,22 +167,37 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   navigation_keys_prev = navigation_keys;
 
   if (KEYB_POSEDGE(face_select)) {
-    if (osd_mode == OSD_FULL) {
-      osd_mode = OSD_OFF;
+    if (KEYB_DOWN(trig_l1)) {
+      // L + Select: Swap joystick ports on the fly
+      if (mod_l_active) {
+        // Swap saved joy mapping
+        uint8_t tmp = c64_saved_joy1;
+        c64_saved_joy1 = c64_saved_joy2;
+        c64_saved_joy2 = tmp;
+      } else {
+        uint8_t j1 = bits_get(*C64_CTRL, 1, 2);
+        uint8_t j2 = bits_get(*C64_CTRL, 3, 2);
+        *C64_CTRL = bits_set(*C64_CTRL, 1, 2, j2);
+        *C64_CTRL = bits_set(*C64_CTRL, 3, 2, j1);
+      }
     } else {
-      osd_mode = OSD_FULL;
-    }
-    if (osd_mode == OSD_FULL) {
-      // Read joystick mapping when entering OSD
-      joystick1 = bits_get(*C64_CTRL, 1, 2);
-      joystick2 = bits_get(*C64_CTRL, 3, 2);
-      // Disconnect both joysticks while in OSD
-      *C64_CTRL = bits_set(*C64_CTRL, 1, 2, 0);
-      *C64_CTRL = bits_set(*C64_CTRL, 3, 2, 0);
-    } else {
-      // Restore joystick mapping when leaving OSD
-      *C64_CTRL = bits_set(*C64_CTRL, 1, 2, joystick1);
-      *C64_CTRL = bits_set(*C64_CTRL, 3, 2, joystick2);
+      if (osd_mode == OSD_FULL) {
+        osd_mode = OSD_OFF;
+      } else {
+        osd_mode = OSD_FULL;
+      }
+      if (osd_mode == OSD_FULL) {
+        // Read joystick mapping when entering OSD
+        joystick1 = bits_get(*C64_CTRL, 1, 2);
+        joystick2 = bits_get(*C64_CTRL, 3, 2);
+        // Disconnect both joysticks while in OSD
+        *C64_CTRL = bits_set(*C64_CTRL, 1, 2, 0);
+        *C64_CTRL = bits_set(*C64_CTRL, 3, 2, 0);
+      } else {
+        // Restore joystick mapping when leaving OSD
+        *C64_CTRL = bits_set(*C64_CTRL, 1, 2, joystick1);
+        *C64_CTRL = bits_set(*C64_CTRL, 3, 2, joystick2);
+      }
     }
   }
 

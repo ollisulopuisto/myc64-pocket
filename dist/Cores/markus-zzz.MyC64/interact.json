@@ -48,46 +48,30 @@
         "writeonly": true
       },
       {
-        "name": "L-Hold: D-pad",
+        "name": "L-Hold: Shortcuts",
         "id": 201,
         "type": "list",
         "enabled": true,
         "defaultval": 0,
         "options": [
-          { "value": 0, "name": "U:F1 R:F3 D:F5 L:F7" }
+          { "value": 0, "name": "SELECT: Swap Joy Port 1/2" },
+          { "value": 1, "name": "D-Pad: F1 / F3 / F5 / F7" },
+          { "value": 2, "name": "A/B: Space / Return" },
+          { "value": 3, "name": "X/Y: Run-Stop / 1" }
         ],
         "writeonly": true
       },
       {
-        "name": "L-Hold: A/B/X/Y",
+        "name": "L+R Hold: Shifted",
         "id": 202,
         "type": "list",
         "enabled": true,
         "defaultval": 0,
         "options": [
-          { "value": 0, "name": "Space / Ret / Stop / 1" }
-        ],
-        "writeonly": true
-      },
-      {
-        "name": "L+R Hold: D-pad",
-        "id": 203,
-        "type": "list",
-        "enabled": true,
-        "defaultval": 0,
-        "options": [
-          { "value": 0, "name": "U:F2 R:F4 D:F6 L:F8" }
-        ],
-        "writeonly": true
-      },
-      {
-        "name": "L+R Hold: A/B/X/Y",
-        "id": 204,
-        "type": "list",
-        "enabled": true,
-        "defaultval": 0,
-        "options": [
-          { "value": 0, "name": "Space / N / Y / 2" }
+          { "value": 0, "name": "D-Pad: F2 / F4 / F6 / F8" },
+          { "value": 1, "name": "A/B: Space / N" },
+          { "value": 2, "name": "X/Y: Y / 2" },
+          { "value": 3, "name": "START: Commodore (C=)" }
         ],
         "writeonly": true
       }

@@ -5,6 +5,46 @@
             {
                 "type": "default",
                 "mappings": [
+                    {
+                        "id": 0,
+                        "name": "Fire 1",
+                        "key": "pad_btn_a"
+                    },
+                    {
+                        "id": 1,
+                        "name": "Jump (Up)",
+                        "key": "pad_btn_b"
+                    },
+                    {
+                        "id": 2,
+                        "name": "Space",
+                        "key": "pad_btn_x"
+                    },
+                    {
+                        "id": 3,
+                        "name": "Return",
+                        "key": "pad_btn_y"
+                    },
+                    {
+                        "id": 4,
+                        "name": "C64 Shortcut (Hold)",
+                        "key": "pad_trig_l"
+                    },
+                    {
+                        "id": 5,
+                        "name": "2nd Shortcut (Hold)",
+                        "key": "pad_trig_r"
+                    },
+                    {
+                        "id": 6,
+                        "name": "C64 On-Screen Keyboard",
+                        "key": "pad_btn_select"
+                    },
+                    {
+                        "id": 7,
+                        "name": "Run / Stop",
+                        "key": "pad_btn_start"
+                    }
                 ]
             }
         ]

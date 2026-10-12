@@ -11,6 +11,7 @@ Normal (No modifier):
 * Select: Toggle Virtual Keyboard / In-Core OSD
 
 L Modifier held (Joystick disconnected while held):
+* L + Select:      Swap Joy Port (Port 2 <-> Port 1 on the fly!)
 * L + D-pad Up:    F1
 * L + D-pad Right: F3
 * L + D-pad Down:  F5
@@ -29,6 +30,7 @@ L + R Modifier held together:
 * L + R + Face B:      N (No)
 * L + R + Face X:      Y (Yes)
 * L + R + Face Y:      2 (2 Players select)
+* L + R + Start:       Commodore key (C=)
 
 SUPPORTED FORMATS:
 * .CRT (Cartridge - Magic Desk, EasyFlash)
