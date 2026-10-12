@@ -236,6 +236,7 @@ static const c64_key_chord_t autoboot_seq[] = {
 static int autoboot_idx = -1;
 static uint32_t autoboot_wait = 0;
 static uint8_t autoboot_state = 0; // 0=idle, 1=boot_wait, 2=typing, 3=type_release
+static uint64_t autoboot_mask;
 
 void d64_autoboot_trigger(void) {
   // Reset C64 to clean BASIC prompt before auto-loading
@@ -255,12 +256,15 @@ void d64_autoboot_poll(void) {
     }
     break;
 
-  case 2: // Press key
+  case 2: // Press key (after the pause between keystrokes)
+    if (timer_ticks < autoboot_wait)
+      break;
     if (autoboot_idx < (int)(sizeof(autoboot_seq) / sizeof(autoboot_seq[0]))) {
       uint64_t mask = C64_KEYB_MASK_KEY(autoboot_seq[autoboot_idx].key1);
       if (autoboot_seq[autoboot_idx].key2) {
         mask |= C64_KEYB_MASK_KEY(autoboot_seq[autoboot_idx].key2);
       }
+      autoboot_mask = mask;
       c64_isr_keyb_mask = mask;
       autoboot_wait = timer_ticks + 10; // Hold key for 10 ticks
       autoboot_state = 3;
@@ -270,7 +274,10 @@ void d64_autoboot_poll(void) {
     }
     break;
 
-  case 3: // Release key
+  case 3: // Hold, then release key
+    // Re-assert every tick: prgs_irq() clears c64_isr_keyb_mask while idle,
+    // which otherwise shortens each press to one tick and drops keys.
+    c64_isr_keyb_mask = autoboot_mask;
     if (timer_ticks >= autoboot_wait) {
       c64_isr_keyb_mask = 0;
       autoboot_wait = timer_ticks + 10; // Pause between keystrokes
