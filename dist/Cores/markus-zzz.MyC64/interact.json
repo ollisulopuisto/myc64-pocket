@@ -137,6 +137,26 @@
         ]
       },
       {
+        "name": "Warp (fast load)",
+        "id": 5,
+        "type": "list",
+        "enabled": true,
+        "address": "0xA0000014",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 0,
+        "options": [
+          {
+            "value": 0,
+            "name": "Off"
+          },
+          {
+            "value": 1,
+            "name": "Auto while loading"
+          }
+        ]
+      },
+      {
         "name": "OSD x-offset",
         "id": 0,
         "type": "slider_u32",

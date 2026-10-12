@@ -44,6 +44,10 @@ static void load_track(uint8_t track_id) {
   *TARGET_28 = 0x90000000;              // DP track memory
   *TARGET_2C = track_sizes[track_id];   // length
   *TARGET_0 = 0x636D0180;
+  // Wait for the DMA so warp mode can be told the track is in place
+  while ((*TARGET_0 >> 16) != 0x6F6B)
+    ;
+  *C1541_TRACK_ACK = 0x80 | track_id;
 }
 
 void load_g64() {
@@ -109,6 +113,7 @@ void g64_irq() {
 }
 
 void g64_draw_status_bar() {
-  osd_printf(0, 0, "[G64 MOTOR:%c LED:%c TRACK:$%x] ", motor_on ? '1' : '0',
-             led_on ? '1' : '0', track_no);
+  osd_printf(0, 0, "[G64 MOTOR:%c LED:%c TRACK:$%x%s] ", motor_on ? '1' : '0',
+             led_on ? '1' : '0', track_no,
+             (*C1541_STATUS & C1541_STATUS_WARP) ? " WARP" : "");
 }

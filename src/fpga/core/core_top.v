@@ -403,7 +403,8 @@ module core_top (
   end
 
   reg [2:0] tk;
-  wire sys_ce = (ref32[1:0] == 2'b11) && (tk == ref32[4:2]);
+  wire sys_ce;  // driven by the warp block near the end of the module
+  reg warp_active;
   always @(posedge clk_32mhz) begin
     if (rst) tk <= 0;
     else if (sys_ce) tk <= tk + 1'b1;
@@ -455,8 +456,9 @@ module core_top (
   reg        audgen_lrck;
   reg        audgen_dac;
   reg [31:0] audgen_shift;
-  wire [15:0] sid_audio_l_16 = sid_audio_l[17:2];
-  wire [15:0] sid_audio_r_16 = sid_dual_s ? sid_audio_r[17:2] : sid_audio_l[17:2];
+  wire audio_mute;  // warp mode: muted while not in real time
+  wire [15:0] sid_audio_l_16 = audio_mute ? 16'h0 : sid_audio_l[17:2];
+  wire [15:0] sid_audio_r_16 = audio_mute ? 16'h0 : (sid_dual_s ? sid_audio_r[17:2] : sid_audio_l[17:2]);
   always @(negedge audgen_sclk) begin
     audgen_dac <= audgen_shift[31];
     audgen_shift <= {audgen_shift[30:0], 1'b0};
@@ -532,13 +534,17 @@ module core_top (
   // 8 MHz video domain; one uniform stage for sync, enable and colour.
   wire [23:0] c64_vid_rgb;
   wire c64_vid_hs, c64_vid_vs, c64_vid_de;
+  // While warp mode runs the system faster than real time (vid_locked = 0),
+  // sync comes from the free-running reference raster and the picture is black.
+  wire vid_locked;
+  wire gen_hs, gen_vs, gen_de;
   reg [23:0] c64_color_rgb;
   reg video_hs_r, video_vs_r, video_de_r;
   always @(posedge clk_8mhz) begin
-    c64_color_rgb <= c64_vid_rgb;
-    video_hs_r <= c64_vid_hs;
-    video_vs_r <= c64_vid_vs;
-    video_de_r <= c64_vid_de;
+    c64_color_rgb <= vid_locked ? c64_vid_rgb : 24'h000000;
+    video_hs_r <= vid_locked ? c64_vid_hs : gen_hs;
+    video_vs_r <= vid_locked ? c64_vid_vs : gen_vs;
+    video_de_r <= vid_locked ? c64_vid_de : gen_de;
   end
   assign video_hs = video_hs_r;
   assign video_vs = video_vs_r;
@@ -1018,7 +1024,7 @@ module core_top (
       32'h2000_0028: cpu_mem_rdata = cont3_trig_s;
       32'h2000_002c: cpu_mem_rdata = cont4_trig_s;
       32'h3000_000c: cpu_mem_rdata = c64_ctrl;
-      32'h3000_0100: cpu_mem_rdata = {c1541_motor_on, c1541_led_on, c1541_track_no};
+      32'h3000_0100: cpu_mem_rdata = {warp_active, c1541_motor_on, c1541_led_on, c1541_track_no};
       32'h4xxx_xxxx: cpu_mem_rdata = bridge_rdata;
       32'h7xxx_xxxx: cpu_mem_rdata = bridge_dpram_rdata;
       32'h8xxx_xxxx: cpu_mem_rdata = c1541_track_ram_rdata;
@@ -1036,10 +1042,13 @@ module core_top (
 
   reg [6:0] c64_ctrl;
   reg [12:0] c1541_track_len;
+  reg [7:0] c1541_track_ack;  // {valid, track_no}: BIOS has this track in track RAM
   always @(posedge clk_8mhz) begin
     if (rst) c64_ctrl <= 0;
     else if (cpu_mem_addr == 32'h3000000c && cpu_mem_valid && cpu_mem_wstrb == 4'b1111)
       c64_ctrl <= cpu_mem_wdata[6:0];
+    else if (cpu_mem_addr == 32'h30000108 && cpu_mem_valid && cpu_mem_wstrb == 4'b1111)
+      c1541_track_ack <= cpu_mem_wdata[7:0];
     else if (cpu_mem_addr == 32'h30000104 && cpu_mem_valid && cpu_mem_wstrb == 4'b1111) begin
       c1541_track_len <= cpu_mem_wdata[12:0];
       $display("track_len: %d, track_no: %d", c1541_track_len, c1541_track_no);
@@ -1143,6 +1152,7 @@ module core_top (
   reg [1:0] control_mode; // 0: Standard, 1: Platformer (No D-Pad Up), 2: Driving (L=Down, R=Up)
   reg       sid_model;    // 0: 6581, 1: 8580
   reg       sid_dual;     // 0: Mono, 1: Dual SID (Stereo)
+  reg       warp_mode;    // 0: Off, 1: Auto while the drive motor runs
 
   initial begin
     osd_offset_x <= 1;
@@ -1150,6 +1160,7 @@ module core_top (
     control_mode <= 0;
     sid_model    <= 0; // Default to 6581
     sid_dual     <= 0; // Default to Mono
+    warp_mode    <= 0;
   end
 
   always @(posedge clk_74a) begin
@@ -1161,6 +1172,7 @@ module core_top (
         32'hA000_0008: control_mode <= bridge_wr_data[1:0];
         32'hA000_000C: sid_model    <= bridge_wr_data[0];
         32'hA000_0010: sid_dual     <= bridge_wr_data[0];
+        32'hA000_0014: warp_mode    <= bridge_wr_data[0];
       endcase
     end
   end
@@ -1326,4 +1338,150 @@ module core_top (
     end
   endgenerate
 
+  //
+  // Warp mode
+  //
+  // While the 1541 motor runs, sys_ce fires on every 32 MHz cycle so the C64
+  // and the drive run 4x faster, still in lockstep with each other, so every
+  // loader works. Video sync then comes from a reference copy of the VIC-II
+  // raster that keeps real time; the picture is black and audio is muted.
+  // When warp ends the system stalls until its raster lines up with the
+  // reference again (at most one frame) and the VIC-II takes over seamlessly.
+  //
+  wire warp_mode_s;
+  synch_3 s_warp_mode (warp_mode, warp_mode_s, clk_32mhz);
+
+  wire ref_tick = (ref32[1:0] == 2'b11);  // real-time 8 MHz step
+  wire ce_1x = ref_tick && (tk == ref32[4:2]);
+
+  // Shadow of the VIC-II raster counters (vicii.py: x wraps at 0x1f7, y at
+  // 311, cycle restarts at x == 0x190 and counts ph1). Like the VIC-II they
+  // reset with ph_synced_rst regardless of sys_ce.
+  localparam [8:0] VIC_X_LAST = 9'h190;
+  reg [8:0] sx, sy;
+  reg [5:0] scyc;
+  wire [8:0] sx_n = (sx == 9'h1f7) ? 9'd0 : sx + 1'b1;
+  wire [8:0] sy_n = (sx == VIC_X_LAST) ? ((sy == 9'd311) ? 9'd0 : sy + 1'b1) : sy;
+  wire [5:0] scyc_n = (sx == VIC_X_LAST) ? 6'd1 : (tk == 3'b000) ? scyc + 1'b1 : scyc;
+  wire [8:0] sx_d = ph_synced_rst ? 9'd0 : sys_ce ? sx_n : sx;
+  wire [8:0] sy_d = ph_synced_rst ? 9'd0 : sys_ce ? sy_n : sy;
+  wire [5:0] scyc_d = ph_synced_rst ? 6'd0 : sys_ce ? scyc_n : scyc;
+  always @(posedge clk_32mhz) begin
+    sx <= sx_d;
+    sy <= sy_d;
+    scyc <= scyc_d;
+  end
+
+  // Reference raster: follows the shadow while locked, free-runs in real time
+  // otherwise.
+  reg vid_locked_r;
+  reg [8:0] rx, ry;
+  reg [5:0] rcyc;
+  wire [8:0] rx_n = (rx == 9'h1f7) ? 9'd0 : rx + 1'b1;
+  wire [8:0] ry_n = (rx == VIC_X_LAST) ? ((ry == 9'd311) ? 9'd0 : ry + 1'b1) : ry;
+  wire [5:0] rcyc_n = (rx == VIC_X_LAST) ? 6'd1 : (ref32[4:2] == 3'b000) ? rcyc + 1'b1 : rcyc;
+  always @(posedge clk_32mhz) begin
+    if (vid_locked_r) begin
+      rx <= sx_d;
+      ry <= sy_d;
+      rcyc <= scyc_d;
+    end else if (ref_tick) begin
+      rx <= rx_n;
+      ry <= ry_n;
+      rcyc <= rcyc_n;
+    end
+  end
+
+  assign gen_hs = (rx == VIC_X_LAST);
+  assign gen_vs = (ry == 9'd0) && (rx == VIC_X_LAST - 9'd3);
+  assign gen_de = (rcyc >= 6'd13) && (rcyc < 6'd61) && (ry >= 9'h010) && (ry <= 9'h117);
+
+  // Auto trigger: motor on for ~20 ms starts warp, off for ~250 ms ends it
+  // (real time, counted in ref_tick = 8 MHz).
+  localparam [21:0] MOTOR_ON_TICKS = 22'd160000;
+  localparam [21:0] MOTOR_OFF_TICKS = 22'd2000000;
+  reg warp_req;
+  reg [21:0] motor_tmr;
+  always @(posedge clk_32mhz) begin
+    if (rst) begin
+      warp_req <= 0;
+      motor_tmr <= 0;
+    end else if (ref_tick) begin
+      if (c1541_motor_on == warp_req) motor_tmr <= 0;
+      else if (motor_tmr >= (c1541_motor_on ? MOTOR_ON_TICKS : MOTOR_OFF_TICKS)) begin
+        warp_req <= c1541_motor_on;
+        motor_tmr <= 0;
+      end else motor_tmr <= motor_tmr + 1'b1;
+    end
+  end
+
+  // Any controller or keyboard input during warp cancels it until the motor
+  // stops (a held key would last 4x longer in emulated time).
+  reg [15:0] key_prev;
+  reg [63:0] kbd_prev;
+  reg warp_inhibit;
+  always @(posedge clk_32mhz) begin
+    key_prev <= cont1_key_s;
+    kbd_prev <= keyboard_mask;
+    if (rst || !warp_req) warp_inhibit <= 0;
+    else if (warp_active && ((cont1_key_s != key_prev) || (keyboard_mask != kbd_prev))) warp_inhibit <= 1;
+  end
+
+  // No warp with a cartridge (PSRAM accesses are paced in real time) or
+  // during C64 reset.
+  always @(posedge clk_32mhz) begin
+    if (rst) warp_active <= 0;
+    else warp_active <= warp_mode_s && warp_req && !warp_inhibit && (c64_ctrl[6:5] == 2'b00) && !ph_synced_rst;
+  end
+
+  // Track change freeze: in warp the BIOS's 10 ms track synthesis delay would
+  // be 40 ms of emulated time, so once the head has settled (~1 ms emulated)
+  // the system waits until the BIOS acknowledges the new track. Never while
+  // the BIOS is blocked on a C64 RAM write, and never longer than ~100 ms.
+  localparam [13:0] TRACK_SETTLE_STEPS = 14'd8000;
+  localparam [19:0] FREEZE_TIMEOUT_TICKS = 20'd800000;
+  reg [6:0] trk_prev;
+  reg [13:0] trk_settle;
+  reg [19:0] frz_tmr;
+  reg frz_timeout;
+  wire trk_pending = c1541_track_ack[7] && (c1541_track_ack[6:0] != c1541_track_no);
+  wire warp_freeze = warp_active && trk_pending && (trk_settle >= TRACK_SETTLE_STEPS) &&
+                     !ext_ram_we && !frz_timeout;
+  always @(posedge clk_32mhz) begin
+    trk_prev <= c1541_track_no;
+    if (c1541_track_no != trk_prev) trk_settle <= 0;
+    else if (sys_ce && trk_settle != 14'h3fff) trk_settle <= trk_settle + 1'b1;
+
+    if (!trk_pending) frz_timeout <= 0;
+    else if (frz_tmr == FREEZE_TIMEOUT_TICKS) frz_timeout <= 1;
+
+    if (!warp_freeze) frz_tmr <= 0;
+    else if (ref_tick) frz_tmr <= frz_tmr + 1'b1;
+  end
+
+  // Relock: after warp, step only when the shadow raster equals the reference
+  // (same x, y, cycle and phase). If that ever fails, give up after ~50 ms and
+  // accept a one-off sync jump rather than stalling.
+  localparam [18:0] RELOCK_TIMEOUT_TICKS = 19'd400000;
+  wire relock_match = ce_1x && (sx == rx) && (sy == ry) && (scyc == rcyc);
+  reg [18:0] relock_tmr;
+  always @(posedge clk_32mhz) begin
+    if (rst) begin
+      vid_locked_r <= 1;
+      relock_tmr <= 0;
+    end else if (warp_active) begin
+      vid_locked_r <= 0;
+      relock_tmr <= 0;
+    end else if (!vid_locked_r) begin
+      if (relock_match || relock_tmr == RELOCK_TIMEOUT_TICKS) vid_locked_r <= 1;
+      if (ref_tick) relock_tmr <= relock_tmr + 1'b1;
+    end
+  end
+  wire relock_now = !vid_locked_r && (relock_match || (relock_tmr == RELOCK_TIMEOUT_TICKS && ce_1x));
+
+  assign sys_ce = warp_active ? !warp_freeze : (vid_locked_r ? ce_1x : relock_now);
+  assign vid_locked = vid_locked_r;
+  assign audio_mute = !vid_locked_r;
+
 endmodule
+

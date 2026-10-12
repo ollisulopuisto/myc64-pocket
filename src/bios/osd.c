@@ -105,15 +105,32 @@ void osd_printf(int x, int y, const char *fmt, ...) {
   va_start(ap, fmt);
   while (*fmt) {
     if (*fmt == '%') {
-      int arg = va_arg(ap, int);
       fmt++;
       switch (*fmt++) {
       case 'c':
-        x = osd_put_char(x, y, arg, 0);
+        x = osd_put_char(x, y, va_arg(ap, int), 0);
         break;
       case 'x':
-        x = osd_put_hex8(x, y, arg, 0);
+        x = osd_put_hex8(x, y, va_arg(ap, int), 0);
         break;
+      case 'd': {
+        unsigned v = va_arg(ap, unsigned);
+        char buf[10];
+        int n = 0;
+        do {
+          buf[n++] = '0' + v % 10;
+          v /= 10;
+        } while (v && n < (int)sizeof(buf));
+        while (n)
+          x = osd_put_char(x, y, buf[--n], 0);
+        break;
+      }
+      case 's': {
+        const char *str = va_arg(ap, const char *);
+        while (*str)
+          x = osd_put_char(x, y, *str++, 0);
+        break;
+      }
       }
     } else {
       x = osd_put_char(x, y, *fmt++, 0);

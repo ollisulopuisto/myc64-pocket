@@ -55,6 +55,9 @@
 
 #define C1541_STATUS ((volatile uint32_t *)0x30000100)
 #define C1541_TRACK_LEN ((volatile uint32_t *)0x30000104)
+// {valid, track_no}: tells warp mode the requested track is in track RAM
+#define C1541_TRACK_ACK ((volatile uint32_t *)0x30000108)
+#define C1541_STATUS_WARP (1 << 9)
 
 #define TARGET_0 ((volatile uint32_t *)0x40000000)
 #define TARGET_4 ((volatile uint32_t *)0x40000004)

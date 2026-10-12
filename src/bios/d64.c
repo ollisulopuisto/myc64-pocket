@@ -312,6 +312,7 @@ void d64_irq() {
   if (req_track_no != d64_track_no) {
     synthesize_d64_track(req_track_no);
     d64_track_no = req_track_no;
+    *C1541_TRACK_ACK = 0x80 | req_track_no;
   }
 
   if (osd_mode == OSD_OFF || osd_mode == OSD_STATUS_BAR) {
@@ -334,6 +335,7 @@ void d64_irq() {
 }
 
 void d64_draw_status_bar() {
-  osd_printf(0, 0, "[D64 MOTOR:%c LED:%c TRACK:%d] ", d64_motor_on ? '1' : '0',
-             d64_led_on ? '1' : '0', (d64_track_no >> 1) + 1);
+  osd_printf(0, 0, "[D64 MOTOR:%c LED:%c TRACK:%d%s] ", d64_motor_on ? '1' : '0',
+             d64_led_on ? '1' : '0', (d64_track_no >> 1) + 1,
+             (*C1541_STATUS & C1541_STATUS_WARP) ? " WARP" : "");
 }
