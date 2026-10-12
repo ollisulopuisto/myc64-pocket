@@ -63,8 +63,18 @@ class My1541(Elaboratable):
     # step it at 8 MHz normally, or every cycle in warp mode.
     self.i_ce = Signal()
 
+    # Savestate scan chain (driven by savestate.add_scan_chain in __main__)
+    self.i_ss_shift = Signal()
+    self.i_ss_si = Signal(32)
+    self.o_ss_so = Signal(32)
+    self.i_ss_capture = Signal()
+    self.i_ss_cpu_load = Signal()
+    self.o_ss_words = Signal(16)
+    self.o_ss_hash = Signal(32)
+
     self.ports = [
         self.i_ce,
+        self.i_ss_shift, self.i_ss_si, self.o_ss_so, self.i_ss_capture, self.i_ss_cpu_load, self.o_ss_words, self.o_ss_hash,
         self.o_addr, self.i_rom_data, self.i_ram_data, self.o_ram_data, self.o_ram_we, self.o_track_addr,
         self.i_track_data, self.i_track_len, self.o_track_no, self.o_led_on, self.o_motor_on, self.i_clk_1mhz_ph1_en,
         self.i_clk_1mhz_ph2_en, self.i_iec_atn_in, self.i_iec_data_in, self.o_iec_data_out, self.i_iec_clock_in,
@@ -77,6 +87,7 @@ class My1541(Elaboratable):
 
     # 6502 CPU.
     m.submodules.u_cpu_ = u_cpu_ = Cpu6502()
+    m.d.comb += u_cpu_.i_ss_load.eq(self.i_ss_cpu_load)
 
     # VIA-1.
     m.submodules.u_via1 = u_via1 = VIA()
@@ -241,6 +252,8 @@ class My1541(Elaboratable):
 
 from amaranth.back import verilog
 from amaranth.hdl import EnableInserter
+from amaranth.hdl._ir import Fragment
+from savestate import add_scan_chain
 import sys
 import os
 
@@ -249,4 +262,8 @@ if __name__ == "__main__":
   my1541 = My1541()
 
   with open("my1541.v", "w") as f:
-    f.write(verilog.convert(elaboratable=EnableInserter({'sync': my1541.i_ce})(my1541), name='my1541_top', ports=my1541.ports))
+    frag = Fragment.get(EnableInserter({'sync': my1541.i_ce})(my1541), None)
+    words, digest = add_scan_chain(frag, my1541.i_ss_shift, my1541.i_ss_si, my1541.o_ss_so, my1541.i_ss_capture,
+                                   my1541.o_ss_words, my1541.o_ss_hash, 'my1541_ss_map.json')
+    print('savestate chain: %d words, layout hash %08x' % (words, digest))
+    f.write(verilog.convert(elaboratable=frag, name='my1541_top', ports=my1541.ports))

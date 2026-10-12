@@ -1,0 +1,4 @@
+Copy of T65 from https://github.com/mist-devel/T65 (submodule
+src/fpga/core/myc64-rtl/T65, commit 7027ad1) with savestate ports added to
+T65.vhd: SS_Q (complete internal state), SS_D and SS_Load (load it). The
+Quartus project uses this copy; the other files are unchanged.

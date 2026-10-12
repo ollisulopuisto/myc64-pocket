@@ -420,10 +420,13 @@ module core_top (
   reg ss_ack_tgl;
   reg [1:0] ss_save_res, ss_load_res;
   wire [31:0] ss_bridge_rd_data;
+  reg ss_glue_load;     // savestate load: restore tk, ph_synced_rst, VIC raster shadow
+  reg [31:0] ss_glue;   // {tk, ph_synced_rst, scyc, sy, sx}
   localparam [31:0] SS_SIZE = 32'h0002_0000;
   reg warp_active;
   always @(posedge clk_32mhz) begin
     if (rst) tk <= 0;
+    else if (ss_glue_load) tk <= ss_glue[27:25];
     else if (sys_ce) tk <= tk + 1'b1;
   end
   wire sys_ph1_en = sys_ce && (tk == 3'b000);
@@ -434,6 +437,7 @@ module core_top (
   reg ph_synced_rst;
   always @(posedge clk_32mhz) begin
     if (rst) ph_synced_rst <= 1;
+    else if (ss_glue_load) ph_synced_rst <= ss_glue[24];
     else if (sys_ph2_en) ph_synced_rst <= ~c64_ctrl[0];
   end
 
@@ -550,6 +554,11 @@ module core_top (
   // VIC-II output (clk_32mhz, changes only on sys_ce) registered into the
   // 8 MHz video domain; one uniform stage for sync, enable and colour.
   wire c64_cart_active;
+  wire [3:0] c64_color_rdata, c64_color_wdata;
+  wire c64_color_we;
+  wire ss_c64_shift, ss_1541_shift, ss_capture, ss_cpu_load;
+  wire [31:0] ss_c64_si, ss_c64_so, ss_1541_si, ss_1541_so, ss_c64_hash, ss_1541_hash;
+  wire [15:0] ss_c64_words, ss_1541_words;
   wire [23:0] c64_vid_rgb;
   wire c64_vid_hs, c64_vid_vs, c64_vid_de;
   // While warp mode runs the system faster than real time (vid_locked = 0),
@@ -673,6 +682,16 @@ module core_top (
       .i_cart_type(c64_ctrl[7:5]),
       .i_freeze(cart_freeze),
       .o_cart_active(c64_cart_active),
+      .i_color_data(c64_color_rdata),
+      .o_color_data(c64_color_wdata),
+      .o_color_we(c64_color_we),
+      .i_ss_shift(ss_c64_shift),
+      .i_ss_si(ss_c64_si),
+      .o_ss_so(ss_c64_so),
+      .i_ss_capture(ss_capture),
+      .i_ss_cpu_load(ss_cpu_load),
+      .o_ss_words(ss_c64_words),
+      .o_ss_hash(ss_c64_hash),
       .o_cart_addr(c64_cart_addr),
       .o_cart_we(c64_cart_we),
       .i_cart_data(c64_cart_idata),
@@ -689,6 +708,16 @@ module core_top (
   // reSIDfp SystemVerilog Dual-SID (MOS 6581 / MOS 8580 selectable)
   //
   wire [1:0] sid_chip_cs = { (sid_dual_s & c64_sid2_cs), c64_sid_cs };
+
+  // Savestate: SID register shadow (both chips; the SID has no readback)
+  reg [7:0] ss_sid_regs [0:63];
+  reg ss_sid_inject;
+  reg [5:0] ss_sid_idx;
+  reg [7:0] ss_sid_inject_data;
+  always @(posedge clk_32mhz) begin
+    if (c64_sid_we && sid_chip_cs[0]) ss_sid_regs[{1'b0, c64_sid_addr}] <= c64_sid_data;
+    if (c64_sid_we && sid_chip_cs[1]) ss_sid_regs[{1'b1, c64_sid_addr}] <= c64_sid_data;
+  end
   wire [1:0] sid_chip_mode = { sid_model_s, sid_model_s };
 
   // Generate a 1MHz clock enable in the 32MHz domain.
@@ -705,10 +734,10 @@ module core_top (
       .reset      (ph_synced_rst),
       .clk        (clk_32mhz),
       .ce_1m      (sid_ce_1m),
-      .cs         (sid_chip_cs),
-      .we         (c64_sid_we),
-      .addr       (c64_sid_addr),
-      .data_in    (c64_sid_data),
+      .cs         (ss_sid_inject ? {ss_sid_idx[5], ~ss_sid_idx[5]} : sid_chip_cs),
+      .we         (ss_sid_inject | c64_sid_we),
+      .addr       (ss_sid_inject ? ss_sid_idx[4:0] : c64_sid_addr),
+      .data_in    (ss_sid_inject ? ss_sid_inject_data : c64_sid_data),
       .data_out   (sid_data_out),
       .fc_offset_l(13'd0),
       .pot_x_l    (8'hff),
@@ -768,7 +797,14 @@ module core_top (
       .o_debug_6502_sync(debug_c1541_cpu_sync),
       .o_debug_6502_addr(debug_c1541_cpu_addr),
       .o_debug_6502_data(debug_c1541_cpu_data),
-      .o_debug_6502_regs(debug_c1541_cpu_regs)
+      .o_debug_6502_regs(debug_c1541_cpu_regs),
+      .i_ss_shift(ss_1541_shift),
+      .i_ss_si(ss_1541_si),
+      .o_ss_so(ss_1541_so),
+      .i_ss_capture(ss_capture),
+      .i_ss_cpu_load(ss_cpu_load),
+      .o_ss_words(ss_1541_words),
+      .o_ss_hash(ss_1541_hash)
   );
 
   wire [15:0] c64_bus_addr;
@@ -954,19 +990,58 @@ module core_top (
   //
   // Memories for My1541
   //
-  spram #(
-      .aw(11),
-      .dw(8)
-  ) u_c1541_ram (
-      .clk (clk_32mhz),
-      .rst (rst),
-      .ce  (1'b1),
-      .oe  (1'b1),
-      .addr(c1541_bus_addr),
-      .do  (c1541_ram_rdata),
-      .di  (c1541_ram_wdata),
-      .we  (c1541_ram_we & ~ss_pause)
-  );
+  // 1541 RAM (2 KB) and C64 color RAM (1K x 4) as byte lanes: port A for the
+  // emulated system, port B for the savestate window (0xB000_1000 and
+  // 0xB000_1800; color RAM is one nibble per byte).
+  reg [1:0] c1541_ram_lane_q, color_lane_q;
+  always @(posedge clk_32mhz) begin
+    c1541_ram_lane_q <= c1541_bus_addr[1:0];
+    color_lane_q <= c64_bus_addr[1:0];
+  end
+  wire [31:0] c1541_ram_a_dout, c1541_ram_b_dout;
+  wire [15:0] color_a_dout;
+  wire [31:0] color_b_dout;
+  wire ss_1541_bridge_wr = bridge_wr && (bridge_addr[31:11] == 21'h160002);   // 0xB000_1000
+  wire ss_color_bridge_wr = bridge_wr && (bridge_addr[31:10] == 22'h2C0006);  // 0xB000_1800
+  genvar li;
+  generate
+    for (li = 0; li < 4; li = li + 1) begin : small_ram_lane
+      bram_block_dp #(
+          .DATA(8),
+          .ADDR(9)
+      ) u_c1541_lane (
+          .a_clk (clk_32mhz),
+          .a_wr  (c1541_ram_we && ~ss_pause && (c1541_bus_addr[1:0] == li)),
+          .a_addr(c1541_bus_addr[10:2]),
+          .a_din (c1541_ram_wdata),
+          .a_dout(c1541_ram_a_dout[li*8+7:li*8]),
+          .b_clk (clk_74a),
+          .b_wr  (ss_1541_bridge_wr),
+          .b_addr(bridge_addr[10:2]),
+          .b_din (bridge_wr_data[31-li*8:24-li*8]),
+          .b_dout(c1541_ram_b_dout[31-li*8:24-li*8])
+      );
+      bram_block_dp #(
+          .DATA(4),
+          .ADDR(8)
+      ) u_color_lane (
+          .a_clk (clk_32mhz),
+          .a_wr  (c64_color_we && ~ss_pause && (c64_bus_addr[1:0] == li)),
+          .a_addr(c64_bus_addr[9:2]),
+          .a_din (c64_color_wdata),
+          .a_dout(color_a_dout[li*4+3:li*4]),
+          .b_clk (clk_74a),
+          .b_wr  (ss_color_bridge_wr),
+          .b_addr(bridge_addr[9:2]),
+          .b_din (bridge_wr_data[27-li*8:24-li*8]),
+          .b_dout(color_b_dout[27-li*8:24-li*8])
+      );
+      assign color_b_dout[31-li*8:28-li*8] = 4'h0;
+    end
+  endgenerate
+  assign c1541_ram_rdata = c1541_ram_a_dout[c1541_ram_lane_q*8+:8];
+  assign c64_color_rdata = color_a_dout[color_lane_q*4+:4];
+
 
   spram #(
       .aw(14),
@@ -1082,6 +1157,12 @@ module core_top (
   end
 
   reg [7:0] c64_ctrl;
+  reg ss_ctrl_tgl = 0;  // savestate load -> 8 MHz: restore cartridge type
+  reg [7:0] ss_ctrl_val;
+  wire ss_ctrl_tgl_s;
+  reg ss_ctrl_seen = 0;
+  synch_3 s_ss_ctrl (ss_ctrl_tgl, ss_ctrl_tgl_s, clk_8mhz);
+  always @(posedge clk_8mhz) ss_ctrl_seen <= ss_ctrl_tgl_s;
   reg cart_freeze;  // freeze button for Action Replay / Retro Replay
   reg [12:0] c1541_track_len;
   reg [7:0] c1541_track_ack;  // {valid, track_no}: BIOS has this track in track RAM
@@ -1090,6 +1171,8 @@ module core_top (
       c64_ctrl <= 0;
       cart_freeze <= 0;
     end
+    else if (ss_ctrl_tgl_s != ss_ctrl_seen)
+      c64_ctrl[7:5] <= ss_ctrl_val[7:5];  // savestate load: cartridge type
     else if (cpu_mem_addr == 32'h3000000c && cpu_mem_valid && cpu_mem_wstrb == 4'b1111)
       c64_ctrl <= cpu_mem_wdata[7:0];
     else if (cpu_mem_addr == 32'h30000010 && cpu_mem_valid && cpu_mem_wstrb == 4'b1111)
@@ -1414,9 +1497,9 @@ module core_top (
   wire [8:0] sy_d = ph_synced_rst ? 9'd0 : sys_ce ? sy_n : sy;
   wire [5:0] scyc_d = ph_synced_rst ? 6'd0 : sys_ce ? scyc_n : scyc;
   always @(posedge clk_32mhz) begin
-    sx <= sx_d;
-    sy <= sy_d;
-    scyc <= scyc_d;
+    sx <= ss_glue_load ? ss_glue[8:0] : sx_d;
+    sy <= ss_glue_load ? ss_glue[17:9] : sy_d;
+    scyc <= ss_glue_load ? ss_glue[23:18] : scyc_d;
   end
 
   // Reference raster: follows the shadow while locked, free-runs in real time
@@ -1535,36 +1618,64 @@ module core_top (
   assign audio_mute = !vid_locked_r;
 
   //
-  // Savestates (stage A: plumbing; the blob holds a header page and C64 RAM)
+  // Savestates
   //
-  // Window 0xB000_0000..0xB001_FFFF on the bridge:
-  //   0xB000_0000  header: magic "C64S", format version
-  //   0xB001_0000  C64 RAM, 64 KB (live dual-port, see u_c64_main_ram)
-  // Save: pause, report done, stay paused until the Pocket has read the last
-  // word (or ~2 s). Load: the first write into the window pauses; the 0x00A4
-  // start checks the header and resumes. Resume relocks video like warp does.
+  // Bridge window 0xB000_0000, SS_SIZE bytes:
+  //   0xB000_0000  state page, 512 words (u_ss_regs):
+  //                  0 magic "C64S"   1 version   2 C64 chain hash
+  //                  3 1541 chain hash  4 C64 words  5 1541 words
+  //                  6 c64_ctrl  7 glue {tk, ph_synced_rst, VIC raster shadow}
+  //                  64..   C64 scan chain (myc64-rtl/savestate.py)
+  //                  192..  1541 scan chain
+  //                  256..319  SID registers, one byte per word
+  //   0xB000_1000  1541 RAM, 2 KB
+  //   0xB000_1800  color RAM, 1 KB (low nibbles)
+  //   0xB001_0000  C64 RAM, 64 KB
+  // Memories are live dual-port views; the system is paused (sys_ce = 0)
+  // while they are read or written. Save: pause, capture the T65s, rotate the
+  // chains into the state page, report done, stay paused until the Pocket has
+  // read the last word (or ~2 s). Load: the first window write pauses; the
+  // 0x00A4 start checks the header, shifts the chains back in, loads the T65s,
+  // restores glue and SID, and resumes. Video relocks like after warp.
+  //
+  // Not saved yet: cartridge RAM in PSRAM (Action/Retro Replay), SID internals
+  // (oscillators and envelopes restart from the registers), BIOS state.
   //
   localparam [31:0] SS_MAGIC = 32'h4336_3453;  // "C64S"
-  localparam [31:0] SS_VERSION = 32'd1;
+  localparam [31:0] SS_VERSION = 32'd2;
+  localparam [8:0] SS_W_C64 = 9'd64;
+  localparam [8:0] SS_W_1541 = 9'd192;
+  localparam [8:0] SS_W_SID = 9'd256;
 
-  // Header page (bridge domain): reads return the live header, writes during a
-  // load are kept for the check.
-  reg [31:0] ss_hdr_rd;
-  reg [31:0] ss_loaded_magic, ss_loaded_version;
-  always @(posedge clk_74a) begin
-    case (bridge_addr[3:2])
-      2'd0: ss_hdr_rd <= SS_MAGIC;
-      2'd1: ss_hdr_rd <= SS_VERSION;
-      default: ss_hdr_rd <= 32'd0;
-    endcase
-    if (bridge_wr && bridge_addr[31:16] == 16'hB000) begin
-      if (bridge_addr[15:0] == 16'h0000) ss_loaded_magic <= bridge_wr_data;
-      if (bridge_addr[15:0] == 16'h0004) ss_loaded_version <= bridge_wr_data;
-    end
-  end
-  reg ss_rd_ram;
-  always @(posedge clk_74a) ss_rd_ram <= bridge_addr[16];
-  assign ss_bridge_rd_data = ss_rd_ram ? c64_ram_b_dout : ss_hdr_rd;
+  // State page
+  reg [8:0] ss_ra_addr;
+  reg ss_ra_wr;
+  reg [31:0] ss_ra_din;
+  wire [31:0] ss_ra_dout;
+  wire [31:0] ss_rb_dout;
+  bram_block_dp #(
+      .DATA(32),
+      .ADDR(9)
+  ) u_ss_regs (
+      .a_clk (clk_32mhz),
+      .a_wr  (ss_ra_wr),
+      .a_addr(ss_ra_addr),
+      .a_din (ss_ra_din),
+      .a_dout(ss_ra_dout),
+      .b_clk (clk_74a),
+      .b_wr  (bridge_wr && bridge_addr[31:11] == 21'h160000),  // 0xB000_0000
+      .b_addr(bridge_addr[10:2]),
+      .b_din (bridge_wr_data),
+      .b_dout(ss_rb_dout)
+  );
+
+  // Bridge read mux (region select registered like the BRAM outputs)
+  reg [1:0] ss_rd_region;
+  always @(posedge clk_74a)
+    ss_rd_region <= bridge_addr[16] ? 2'd3 : (bridge_addr[12] ? (bridge_addr[11] ? 2'd2 : 2'd1) : 2'd0);
+  assign ss_bridge_rd_data = (ss_rd_region == 2'd3) ? c64_ram_b_dout :
+                             (ss_rd_region == 2'd2) ? color_b_dout :
+                             (ss_rd_region == 2'd1) ? c1541_ram_b_dout : ss_rb_dout;
 
   // Bridge-domain events toggled into the system domain
   reg ss_last_rd_tgl = 0;  // Pocket read the last word of the blob
@@ -1579,14 +1690,70 @@ module core_top (
   synch_3 s_ss_op (ss_req_op, ss_req_op_s, clk_32mhz);
   synch_3 s_ss_lrd (ss_last_rd_tgl, ss_last_rd_s, clk_32mhz);
   synch_3 s_ss_wrs (ss_wr_seen_tgl, ss_wr_seen_s, clk_32mhz);
+
+  localparam [3:0] SS_IDLE = 4'd0, SS_SV_SETTLE = 4'd1, SS_SV_CAPTURE = 4'd2, SS_SV_C64 = 4'd3,
+                   SS_SV_1541 = 4'd4, SS_SV_HDR = 4'd5, SS_SV_SID = 4'd6, SS_HOLD = 4'd7,
+                   SS_LD_HDR = 4'd8, SS_LD_C64 = 4'd9, SS_LD_1541 = 4'd10, SS_LD_CPU = 4'd11,
+                   SS_LD_SID = 4'd12, SS_LD_DONE = 4'd13;
+  reg [3:0] ss_state;
+  reg [8:0] ss_k;          // word / register index within the current step
+  reg ss_rd_phase;         // load: 0 = address issued, 1 = data available
   reg ss_req_seen, ss_last_rd_seen, ss_wr_seen;
-  reg [2:0] ss_req_dly;  // let ss_req_op settle after the toggle
-  reg [26:0] ss_tmr;     // bit 26 = ~2 s at 32 MHz
-  reg ss_hold_read;      // save done, waiting for the Pocket to read it
-  reg ss_hold_load;      // blob being written, waiting for the load start
+  reg [2:0] ss_req_dly;    // let ss_req_op settle after the toggle
+  reg [26:0] ss_tmr;       // bit 26 = ~2 s at 32 MHz
+  reg ss_hold_read;        // save done, waiting for the Pocket to read it
+  reg ss_hold_load;        // blob being written, waiting for the load start
+  reg ss_hdr_ok;
+  reg [7:0] ss_ld_ctrl;
+
+  // Chain control is combinational on the state so data and shift line up
+  assign ss_c64_shift = (ss_state == SS_SV_C64) || (ss_state == SS_LD_C64 && ss_rd_phase);
+  assign ss_1541_shift = (ss_state == SS_SV_1541) || (ss_state == SS_LD_1541 && ss_rd_phase);
+  assign ss_c64_si = (ss_state == SS_SV_C64) ? ss_c64_so : ss_ra_dout;
+  assign ss_1541_si = (ss_state == SS_SV_1541) ? ss_1541_so : ss_ra_dout;
+  assign ss_capture = (ss_state == SS_SV_CAPTURE);
+  assign ss_cpu_load = (ss_state == SS_LD_CPU);
+
+  wire [31:0] ss_glue_now = {4'd0, tk, ph_synced_rst, scyc, sy, sx};
+
+  always @(*) begin
+    ss_ra_wr = 0;
+    ss_ra_din = 32'd0;
+    case (ss_state)
+      SS_SV_C64: begin
+        ss_ra_wr = 1;
+        ss_ra_din = ss_c64_so;
+      end
+      SS_SV_1541: begin
+        ss_ra_wr = 1;
+        ss_ra_din = ss_1541_so;
+      end
+      SS_SV_HDR: begin
+        ss_ra_wr = 1;
+        case (ss_k[2:0])
+          3'd0: ss_ra_din = SS_MAGIC;
+          3'd1: ss_ra_din = SS_VERSION;
+          3'd2: ss_ra_din = ss_c64_hash;
+          3'd3: ss_ra_din = ss_1541_hash;
+          3'd4: ss_ra_din = {16'd0, ss_c64_words};
+          3'd5: ss_ra_din = {16'd0, ss_1541_words};
+          3'd6: ss_ra_din = {24'd0, c64_ctrl};
+          default: ss_ra_din = ss_glue_now;
+        endcase
+      end
+      SS_SV_SID: begin
+        ss_ra_wr = 1;
+        ss_ra_din = {24'd0, ss_sid_regs[ss_k[5:0]]};
+      end
+      default: ;
+    endcase
+  end
 
   always @(posedge clk_32mhz) begin
+    ss_glue_load <= 0;
+    ss_sid_inject <= 0;
     if (rst) begin
+      ss_state <= SS_IDLE;
       ss_pause <= 0;
       ss_ack_tgl <= 0;
       ss_save_res <= 0;
@@ -1598,15 +1765,21 @@ module core_top (
       ss_tmr <= 0;
       ss_hold_read <= 0;
       ss_hold_load <= 0;
+      ss_k <= 0;
+      ss_rd_phase <= 0;
+      ss_ra_addr <= 0;
     end else begin
       ss_tmr <= (ss_hold_read || ss_hold_load) ? ss_tmr + 1'b1 : 27'd0;
 
       // A write into the window: a load is coming, stop the system
       if (ss_wr_seen_s != ss_wr_seen) begin
         ss_wr_seen <= ss_wr_seen_s;
-        ss_pause <= 1;
-        ss_hold_load <= 1;
-        ss_hold_read <= 0;
+        if (ss_state == SS_IDLE || ss_state == SS_HOLD) begin
+          ss_state <= SS_IDLE;
+          ss_pause <= 1;
+          ss_hold_load <= 1;
+          ss_hold_read <= 0;
+        end
       end
 
       if (ss_last_rd_s != ss_last_rd_seen) begin
@@ -1614,26 +1787,8 @@ module core_top (
         if (ss_hold_read) begin
           ss_hold_read <= 0;
           ss_pause <= 0;
+          ss_state <= SS_IDLE;
         end
-      end
-
-      if (ss_req_tgl_s != ss_req_seen && ss_req_dly != 3'd7) ss_req_dly <= ss_req_dly + 1'b1;
-      if (ss_req_tgl_s != ss_req_seen && ss_req_dly == 3'd7) begin
-        ss_req_seen <= ss_req_tgl_s;
-        ss_req_dly <= 0;
-        if (!ss_req_op_s) begin
-          // Save: everything in the blob is live memory, so pausing is enough
-          ss_pause <= 1;
-          ss_hold_read <= 1;
-          ss_hold_load <= 0;
-          ss_save_res <= 2'd2;
-        end else begin
-          ss_hold_load <= 0;
-          ss_hold_read <= 0;
-          ss_pause <= 0;
-          ss_load_res <= (ss_loaded_magic == SS_MAGIC && ss_loaded_version == SS_VERSION) ? 2'd2 : 2'd3;
-        end
-        ss_ack_tgl <= ss_req_tgl_s;
       end
 
       // Never stay stopped if the Pocket goes away mid-transfer
@@ -1641,9 +1796,163 @@ module core_top (
         ss_hold_read <= 0;
         ss_hold_load <= 0;
         ss_pause <= 0;
+        ss_state <= SS_IDLE;
       end
+
+      case (ss_state)
+        SS_IDLE, SS_HOLD: begin
+          if (ss_req_tgl_s != ss_req_seen) begin
+            if (ss_req_dly != 3'd7) ss_req_dly <= ss_req_dly + 1'b1;
+            else begin
+              ss_req_seen <= ss_req_tgl_s;
+              ss_req_dly <= 0;
+              ss_pause <= 1;
+              ss_hold_read <= 0;
+              ss_hold_load <= 0;
+              ss_k <= 0;
+              ss_rd_phase <= 0;
+              if (!ss_req_op_s) begin
+                ss_state <= SS_SV_SETTLE;
+              end else begin
+                ss_state <= SS_LD_HDR;
+                ss_ra_addr <= 0;
+                ss_hdr_ok <= 1;
+              end
+            end
+          end
+        end
+
+        // ---- save
+        SS_SV_SETTLE: begin
+          ss_k <= ss_k + 1'b1;
+          if (ss_k == 9'd7) ss_state <= SS_SV_CAPTURE;
+        end
+        SS_SV_CAPTURE: begin
+          ss_k <= 0;
+          ss_ra_addr <= SS_W_C64;
+          ss_state <= SS_SV_C64;
+        end
+        SS_SV_C64: begin
+          ss_ra_addr <= ss_ra_addr + 1'b1;
+          ss_k <= ss_k + 1'b1;
+          if (ss_k == ss_c64_words - 1) begin
+            ss_k <= 0;
+            ss_ra_addr <= SS_W_1541;
+            ss_state <= SS_SV_1541;
+          end
+        end
+        SS_SV_1541: begin
+          ss_ra_addr <= ss_ra_addr + 1'b1;
+          ss_k <= ss_k + 1'b1;
+          if (ss_k == ss_1541_words - 1) begin
+            ss_k <= 0;
+            ss_ra_addr <= 0;
+            ss_state <= SS_SV_HDR;
+          end
+        end
+        SS_SV_HDR: begin
+          ss_ra_addr <= ss_ra_addr + 1'b1;
+          ss_k <= ss_k + 1'b1;
+          if (ss_k == 9'd7) begin
+            ss_k <= 0;
+            ss_ra_addr <= SS_W_SID;
+            ss_state <= SS_SV_SID;
+          end
+        end
+        SS_SV_SID: begin
+          ss_ra_addr <= ss_ra_addr + 1'b1;
+          ss_k <= ss_k + 1'b1;
+          if (ss_k == 9'd63) begin
+            ss_save_res <= 2'd2;
+            ss_ack_tgl <= ss_req_seen;
+            ss_hold_read <= 1;
+            ss_state <= SS_HOLD;
+          end
+        end
+
+        // ---- load (port A reads have one cycle of latency: ss_rd_phase)
+        SS_LD_HDR: begin
+          ss_rd_phase <= ~ss_rd_phase;
+          if (!ss_rd_phase) begin
+            ss_ra_addr <= ss_ra_addr;  // data for ss_k arrives next cycle
+          end else begin
+            case (ss_k[2:0])
+              3'd0: if (ss_ra_dout != SS_MAGIC) ss_hdr_ok <= 0;
+              3'd1: if (ss_ra_dout != SS_VERSION) ss_hdr_ok <= 0;
+              3'd2: if (ss_ra_dout != ss_c64_hash) ss_hdr_ok <= 0;
+              3'd3: if (ss_ra_dout != ss_1541_hash) ss_hdr_ok <= 0;
+              3'd6: ss_ld_ctrl <= ss_ra_dout[7:0];
+              3'd7: ss_glue <= ss_ra_dout;
+              default: ;
+            endcase
+            ss_k <= ss_k + 1'b1;
+            ss_ra_addr <= ss_ra_addr + 1'b1;
+            if (ss_k == 9'd7) begin
+              ss_k <= 0;
+              ss_ra_addr <= SS_W_C64;
+              ss_state <= SS_LD_C64;
+            end
+          end
+        end
+        SS_LD_C64: begin
+          if (!ss_hdr_ok) begin
+            // Not a state from this core build: leave the system untouched
+            ss_load_res <= 2'd3;
+            ss_ack_tgl <= ss_req_seen;
+            ss_pause <= 0;
+            ss_state <= SS_IDLE;
+          end else begin
+            ss_rd_phase <= ~ss_rd_phase;
+            if (ss_rd_phase) begin  // shift happens this cycle (see ss_c64_shift)
+              ss_k <= ss_k + 1'b1;
+              ss_ra_addr <= ss_ra_addr + 1'b1;
+              if (ss_k == ss_c64_words - 1) begin
+                ss_k <= 0;
+                ss_ra_addr <= SS_W_1541;
+                ss_state <= SS_LD_1541;
+              end
+            end
+          end
+        end
+        SS_LD_1541: begin
+          ss_rd_phase <= ~ss_rd_phase;
+          if (ss_rd_phase) begin
+            ss_k <= ss_k + 1'b1;
+            ss_ra_addr <= ss_ra_addr + 1'b1;
+            if (ss_k == ss_1541_words - 1) begin
+              ss_k <= 0;
+              ss_ra_addr <= SS_W_SID;
+              ss_state <= SS_LD_CPU;
+            end
+          end
+        end
+        SS_LD_CPU: begin  // ss_cpu_load is high for this cycle
+          ss_glue_load <= 1;
+          ss_ctrl_val <= ss_ld_ctrl;
+          ss_ctrl_tgl <= ~ss_ctrl_tgl;
+          ss_rd_phase <= 0;
+          ss_state <= SS_LD_SID;
+        end
+        SS_LD_SID: begin
+          ss_rd_phase <= ~ss_rd_phase;
+          if (ss_rd_phase) begin
+            ss_sid_inject <= 1;
+            ss_sid_idx <= ss_k[5:0];
+            ss_sid_inject_data <= ss_ra_dout[7:0];
+            ss_k <= ss_k + 1'b1;
+            ss_ra_addr <= ss_ra_addr + 1'b1;
+            if (ss_k == 9'd63) ss_state <= SS_LD_DONE;
+          end
+        end
+        SS_LD_DONE: begin
+          ss_load_res <= 2'd2;
+          ss_ack_tgl <= ss_req_seen;
+          ss_pause <= 0;
+          ss_state <= SS_IDLE;
+        end
+        default: ss_state <= SS_IDLE;
+      endcase
     end
   end
 
 endmodule
-

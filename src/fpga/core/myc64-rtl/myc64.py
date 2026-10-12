@@ -189,6 +189,9 @@ class Cartridge(Elaboratable):
 class MyC64(Elaboratable):
   def __init__(self):
     self.i_freeze = Signal()  # cartridge freeze button
+    self.i_color_data = Signal(4)  # color RAM (1K x 4 at o_bus_addr[0:10])
+    self.o_color_data = Signal(4)
+    self.o_color_we = Signal()
     self.o_cart_active = Signal()
     self.i_clk_1mhz_ph1_en = Signal()
     self.i_clk_1mhz_ph2_en = Signal()
@@ -238,8 +241,18 @@ class MyC64(Elaboratable):
     # step it at 8 MHz normally, or every cycle in warp mode.
     self.i_ce = Signal()
 
+    # Savestate scan chain (driven by savestate.add_scan_chain in __main__)
+    self.i_ss_shift = Signal()
+    self.i_ss_si = Signal(32)
+    self.o_ss_so = Signal(32)
+    self.i_ss_capture = Signal()
+    self.i_ss_cpu_load = Signal()
+    self.o_ss_words = Signal(16)
+    self.o_ss_hash = Signal(32)
+
     self.ports = [
         self.i_ce,
+        self.i_ss_shift, self.i_ss_si, self.o_ss_so, self.i_ss_capture, self.i_ss_cpu_load, self.o_ss_words, self.o_ss_hash,
         self.i_clk_1mhz_ph1_en, self.i_clk_1mhz_ph2_en,
         self.o_vid_rgb, self.o_vid_hsync, self.o_vid_vsync, self.o_vid_en,
         self.i_sid_data, self.o_sid_cs, self.o_sid2_cs, self.o_sid_we, self.o_sid_addr, self.o_sid_data,
@@ -247,7 +260,7 @@ class MyC64(Elaboratable):
         self.o_bus_addr, self.i_rom_char_data, self.i_rom_basic_data, self.i_rom_kernal_data,
         self.i_ram_main_data, self.o_ram_main_data, self.o_ram_main_we,
         self.o_iec_atn_out, self.i_iec_data_in , self.o_iec_data_out, self.i_iec_clock_in, self.o_iec_clock_out,
-        self.i_cart_type, self.i_freeze, self.o_cart_active, self.o_cart_addr, self.o_cart_we, self.i_cart_data, self.o_cart_data,
+        self.i_cart_type, self.i_freeze, self.o_cart_active, self.i_color_data, self.o_color_data, self.o_color_we, self.o_cart_addr, self.o_cart_we, self.i_cart_data, self.o_cart_data,
         self.o_debug_6510_valid, self.o_debug_6510_sync, self.o_debug_6510_addr, self.o_debug_6510_data, self.o_debug_6510_regs
     ]
 
@@ -262,6 +275,7 @@ class MyC64(Elaboratable):
 
     # 6510 CPU.
     m.submodules.u_cpu = u_cpu = Cpu6510()
+    m.d.comb += u_cpu.i_ss_load.eq(self.i_ss_cpu_load)
 
     # Vic-II.
     m.submodules.u_vic = u_vic = VicII()
@@ -275,11 +289,9 @@ class MyC64(Elaboratable):
     # Cartridge.
     m.submodules.u_cart = u_cart = Cartridge()
 
-    # Color RAM.
-    u_ram_color = Memory(width=4, depth=pow(2, 10))
-    u_ram_color_rp = u_ram_color.read_port()
-    u_ram_color_wp = u_ram_color.write_port()
-    m.submodules += [u_ram_color_rp, u_ram_color_wp]
+    # Color RAM lives in core_top (so savestates can reach it); like main RAM
+    # its read data is registered one clock after the address.
+    color_rdata = self.i_color_data
 
     cpu_di = Signal(8)
     ram_cs = Signal()
@@ -302,12 +314,10 @@ class MyC64(Elaboratable):
 
     m.d.comb += [self.o_bus_addr.eq(bus_addr)]
     m.d.comb += [
-        u_ram_color_rp.addr.eq(bus_addr),
-        u_ram_color_wp.addr.eq(bus_addr),
-        u_ram_color_wp.data.eq(bus_do),
+        self.o_color_data.eq(bus_do[0:4]),
+        self.o_color_we.eq(color_cs & bus_we),
         self.o_ram_main_data.eq(bus_do),
-        self.o_ram_main_we.eq(ram_cs & bus_we),
-        u_ram_color_wp.en.eq(color_cs & bus_we)
+        self.o_ram_main_we.eq(ram_cs & bus_we)
     ]
 
     m.d.comb += [
@@ -391,7 +401,7 @@ class MyC64(Elaboratable):
                 sid2_cs.eq(cpu_addr[5] == 1)
             ]
           with m.Elif((0xD800 <= cpu_addr) & (cpu_addr <= 0xDBFF)):  # COLOR-RAM
-            m.d.comb += [cpu_di.eq(u_ram_color_rp.data), color_cs.eq(1)]
+            m.d.comb += [cpu_di.eq(color_rdata), color_cs.eq(1)]
           with m.Elif((0xDC00 <= cpu_addr) & (cpu_addr <= 0xDCFF)):  # CIA1
             m.d.comb += [cpu_di.eq(u_cia1.o_data), cia1_cs.eq(1)]
           with m.Elif((0xDD00 <= cpu_addr) & (cpu_addr <= 0xDDFF)):  # CIA2
@@ -478,9 +488,9 @@ class MyC64(Elaboratable):
     ]
 
     with m.If((bus_addr[12:16] == 0b0001) | (bus_addr[12:16] == 0b1001)):
-      m.d.comb += u_vic.i_data.eq(Cat(self.i_rom_char_data, u_ram_color_rp.data))
+      m.d.comb += u_vic.i_data.eq(Cat(self.i_rom_char_data, color_rdata))
     with m.Else():
-      m.d.comb += u_vic.i_data.eq(Cat(self.i_ram_main_data, u_ram_color_rp.data))
+      m.d.comb += u_vic.i_data.eq(Cat(self.i_ram_main_data, color_rdata))
 
     # Keyboard matrix and joysticks.
     m.d.comb += u_cia1.i_pa.eq(Cat(~self.i_joystick2[0:5], C(0b111, 3)))
@@ -539,6 +549,8 @@ class MyC64(Elaboratable):
 
 from amaranth.back import verilog
 from amaranth.hdl import EnableInserter
+from amaranth.hdl._ir import Fragment
+from savestate import add_scan_chain
 import sys
 import os
 
@@ -547,4 +559,8 @@ if __name__ == "__main__":
   myc64 = MyC64()
 
   with open("myc64.v", "w") as f:
-    f.write(verilog.convert(elaboratable=EnableInserter({'sync': myc64.i_ce})(myc64), name='myc64_top', ports=myc64.ports))
+    frag = Fragment.get(EnableInserter({'sync': myc64.i_ce})(myc64), None)
+    words, digest = add_scan_chain(frag, myc64.i_ss_shift, myc64.i_ss_si, myc64.o_ss_so, myc64.i_ss_capture,
+                                   myc64.o_ss_words, myc64.o_ss_hash, 'myc64_ss_map.json')
+    print('savestate chain: %d words, layout hash %08x' % (words, digest))
+    f.write(verilog.convert(elaboratable=frag, name='myc64_top', ports=myc64.ports))

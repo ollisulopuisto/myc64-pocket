@@ -19,6 +19,7 @@
 # yapf --in-place --recursive --style="{indent_width: 2, column_limit: 120}"
 
 from amaranth import *
+from savestate import register_capture
 
 class Cpu6510(Elaboratable):
   def __init__(self):
@@ -39,6 +40,7 @@ class Cpu6510(Elaboratable):
     self.o_debug_addr = Signal(16)
     self.o_debug_data = Signal(8)
     self.o_debug_regs = Signal(64)
+    self.i_ss_load = Signal()  # savestate: load the T65 state from the shadow
 
   def elaborate(self, platform):
     m = Module()
@@ -62,7 +64,17 @@ class Cpu6510(Elaboratable):
 
     m.d.comb += clk_enable.eq(self.clk_1mhz_ph1_en & ~self.i_stun & rdy_mask)
 
+    # Savestate: T65 state is captured into a shadow register that sits in the
+    # scan chain, and loaded back from it (see savestate.py)
+    ss_q = Signal(192)
+    ss_shadow = Signal(192, name="ss_cpu_shadow")
+    m.d.sync += ss_shadow.eq(ss_shadow)
+    register_capture(ss_shadow, ss_q)
+
     m.submodules.u_6502 = Instance('T65',
+                                   o_SS_Q=ss_q,
+                                   i_SS_D=ss_shadow,
+                                   i_SS_Load=self.i_ss_load,
                                    i_Clk=clk,
                                    i_Enable=clk_enable,
                                    i_Res_n=~rst,
