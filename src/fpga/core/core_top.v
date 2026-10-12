@@ -449,10 +449,10 @@ module core_top (
 
   wire clk_8mhz;
   wire clk_8mhz_90deg;
+  wire clk_32mhz;
   wire pll_core_locked;
 
 `ifndef __VERILATOR__
-  wire clk_32mhz;
   mf_pllbase mp1 (
       .refclk(clk_74a),
       .rst   (0),
@@ -466,6 +466,7 @@ module core_top (
 `else
   assign clk_8mhz = clk_74a;
   assign clk_8mhz_90deg = clk_74a;
+  assign clk_32mhz = clk_74a;
   assign pll_core_locked = 1;
 `endif
 
@@ -623,13 +624,33 @@ module core_top (
   wire [1:0] sid_chip_cs = { (sid_dual_s & c64_sid2_cs), c64_sid_cs };
   wire [1:0] sid_chip_mode = { sid_model_s, sid_model_s };
 
+  // Generate a 1MHz clock enable in the 32MHz domain.
+  // 32 cycles at 32MHz = 1.0MHz period (synchronous with clk_8mhz 1MHz ph2).
+  // This gives sid_top all 16 cycles needed to calculate both SID filter/audio channels.
+  reg [4:0] sid_ce_cntr;
+  wire sid_ce_1m = (sid_ce_cntr == 5'd0);
+  reg clk_8mhz_ph2_d;
+  always @(posedge clk_32mhz) begin
+    if (ph_synced_rst) begin
+      sid_ce_cntr <= 5'd0;
+      clk_8mhz_ph2_d <= 1'b0;
+    end else begin
+      clk_8mhz_ph2_d <= clk_8mhz_1mhz_ph2_en;
+      if (clk_8mhz_1mhz_ph2_en & ~clk_8mhz_ph2_d) begin
+        sid_ce_cntr <= 5'd0;
+      end else begin
+        sid_ce_cntr <= sid_ce_cntr + 1'b1;
+      end
+    end
+  end
+
   sid_top #(
       .MULTI_FILTERS(1),
       .DUAL(1)
   ) u_sid (
       .reset      (ph_synced_rst),
-      .clk        (clk_8mhz),
-      .ce_1m      (clk_8mhz_1mhz_ph2_en),
+      .clk        (clk_32mhz),
+      .ce_1m      (sid_ce_1m),
       .cs         (sid_chip_cs),
       .we         (c64_sid_we),
       .addr       (c64_sid_addr),
