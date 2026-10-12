@@ -385,12 +385,38 @@ module core_top (
   assign clk_8mhz_1mhz_ph1_en = (clk_8mhz_cntr == 3'b000);
   assign clk_8mhz_1mhz_ph2_en = (clk_8mhz_cntr == 3'b100);
 
+  //
+  // Emulated system clock: the C64 and 1541 run on clk_32mhz and advance only
+  // when sys_ce is high. Normally sys_ce fires on the 32 MHz cycle that ends on
+  // each 8 MHz edge, so the system behaves exactly as when clocked by clk_8mhz
+  // (same edges, same alignment to PSRAM and SID). tk is the system's own
+  // 8-step phase counter; it only advances on sys_ce, so a future warp mode
+  // can fire sys_ce more often and the phases follow.
+  //
+  // ref32 restarts from rst together with clk_8mhz_cntr, so
+  // ref32[4:2] == clk_8mhz_cntr and ref32[1:0] == 3 marks the last 32 MHz
+  // cycle before an 8 MHz edge.
+  reg [4:0] ref32;
+  always @(posedge clk_32mhz) begin
+    if (rst) ref32 <= 0;
+    else ref32 <= ref32 + 1'b1;
+  end
+
+  reg [2:0] tk;
+  wire sys_ce = (ref32[1:0] == 2'b11) && (tk == ref32[4:2]);
+  always @(posedge clk_32mhz) begin
+    if (rst) tk <= 0;
+    else if (sys_ce) tk <= tk + 1'b1;
+  end
+  wire sys_ph1_en = sys_ce && (tk == 3'b000);
+  wire sys_ph2_en = sys_ce && (tk == 3'b100);
+
   // Synchronize reset used by C64 and C1541 so that first phase seen after
   // reset is ph1
   reg ph_synced_rst;
-  always @(posedge clk_8mhz) begin
+  always @(posedge clk_32mhz) begin
     if (rst) ph_synced_rst <= 1;
-    else if (clk_8mhz_1mhz_ph2_en) ph_synced_rst <= ~c64_ctrl[0];
+    else if (sys_ph2_en) ph_synced_rst <= ~c64_ctrl[0];
   end
 
   //
@@ -502,7 +528,21 @@ module core_top (
   synch_3 s_sid_model (sid_model, sid_model_s, clk_8mhz);
   synch_3 s_sid_dual  (sid_dual,  sid_dual_s,  clk_8mhz);
 
-  wire [23:0] c64_color_rgb;
+  // VIC-II output (clk_32mhz, changes only on sys_ce) registered into the
+  // 8 MHz video domain; one uniform stage for sync, enable and colour.
+  wire [23:0] c64_vid_rgb;
+  wire c64_vid_hs, c64_vid_vs, c64_vid_de;
+  reg [23:0] c64_color_rgb;
+  reg video_hs_r, video_vs_r, video_de_r;
+  always @(posedge clk_8mhz) begin
+    c64_color_rgb <= c64_vid_rgb;
+    video_hs_r <= c64_vid_hs;
+    video_vs_r <= c64_vid_vs;
+    video_de_r <= c64_vid_de;
+  end
+  assign video_hs = video_hs_r;
+  assign video_vs = video_vs_r;
+  assign video_de = video_de_r;
   wire [17:0] sid_audio_l;
   wire [17:0] sid_audio_r;
   wire  [7:0] sid_data_out;
@@ -572,18 +612,19 @@ module core_top (
   assign debug_iec_atn = iec_atn;
   assign debug_iec_data = iec_data;
   assign debug_iec_clock = iec_clock;
-  assign debug_1mhz_ph1_en = clk_8mhz_1mhz_ph1_en;
-  assign debug_1mhz_ph2_en = clk_8mhz_1mhz_ph2_en;
+  assign debug_1mhz_ph1_en = sys_ph1_en;
+  assign debug_1mhz_ph2_en = sys_ph2_en;
 
   myc64_top u_myc64 (
       .rst(ph_synced_rst),
-      .clk(clk_8mhz),
-      .i_clk_1mhz_ph1_en(clk_8mhz_1mhz_ph1_en),
-      .i_clk_1mhz_ph2_en(clk_8mhz_1mhz_ph2_en),
-      .o_vid_rgb(c64_color_rgb),
-      .o_vid_hsync(video_hs),
-      .o_vid_vsync(video_vs),
-      .o_vid_en(video_de),
+      .clk(clk_32mhz),
+      .i_ce(sys_ce),
+      .i_clk_1mhz_ph1_en(sys_ph1_en),
+      .i_clk_1mhz_ph2_en(sys_ph2_en),
+      .o_vid_rgb(c64_vid_rgb),
+      .o_vid_hsync(c64_vid_hs),
+      .o_vid_vsync(c64_vid_vs),
+      .o_vid_en(c64_vid_de),
       .i_sid_data(sid_data_out),
       .o_sid_cs(c64_sid_cs),
       .o_sid2_cs(c64_sid2_cs),
@@ -627,22 +668,9 @@ module core_top (
   // Generate a 1MHz clock enable in the 32MHz domain.
   // 32 cycles at 32MHz = 1.0MHz period (synchronous with clk_8mhz 1MHz ph2).
   // This gives sid_top all 16 cycles needed to calculate both SID filter/audio channels.
-  reg [4:0] sid_ce_cntr;
-  wire sid_ce_1m = (sid_ce_cntr == 5'd0);
-  reg clk_8mhz_ph2_d;
-  always @(posedge clk_32mhz) begin
-    if (ph_synced_rst) begin
-      sid_ce_cntr <= 5'd0;
-      clk_8mhz_ph2_d <= 1'b0;
-    end else begin
-      clk_8mhz_ph2_d <= clk_8mhz_1mhz_ph2_en;
-      if (clk_8mhz_1mhz_ph2_en & ~clk_8mhz_ph2_d) begin
-        sid_ce_cntr <= 5'd0;
-      end else begin
-        sid_ce_cntr <= sid_ce_cntr + 1'b1;
-      end
-    end
-  end
+  // Free-running off ref32 so the SID always gets real-time 1 MHz with its
+  // full 32-cycle pipeline, one cycle after the system's ph2 step.
+  wire sid_ce_1m = (ref32 == 5'd20);
 
   sid_top #(
       .MULTI_FILTERS(1),
@@ -689,9 +717,10 @@ module core_top (
 
   my1541_top u_my1541 (
       .rst(ph_synced_rst),
-      .clk(clk_8mhz),
-      .i_clk_1mhz_ph1_en(clk_8mhz_1mhz_ph1_en),
-      .i_clk_1mhz_ph2_en(clk_8mhz_1mhz_ph2_en),
+      .clk(clk_32mhz),
+      .i_ce(sys_ce),
+      .i_clk_1mhz_ph1_en(sys_ph1_en),
+      .i_clk_1mhz_ph2_en(sys_ph2_en),
       .o_addr(c1541_bus_addr),
       .i_ram_data(c1541_ram_rdata),
       .o_ram_data(c1541_ram_wdata),
@@ -722,19 +751,21 @@ module core_top (
   wire c64_ram_we;
 
   reg ext_ram_we_r;
-  wire ext_ram_ready;
-
-  assign ext_ram_ready = ext_ram_we_r & clk_8mhz_1mhz_ph1_en;
+  reg ext_ram_done;
 
   // For better or worse the memory signals need to be stable for an entire ph2
-  // cycle.
-  always @(posedge clk_8mhz) begin
-    if (clk_8mhz_1mhz_ph2_en) begin
+  // cycle. ext_ram_done is a level (cleared when the BIOS drops the request)
+  // so the 8 MHz ready logic sees it however the system steps are spaced.
+  always @(posedge clk_32mhz) begin
+    if (sys_ph2_en) begin
       ext_ram_we_r <= ext_ram_we;
     end
-    else if (clk_8mhz_1mhz_ph1_en) begin
+    else if (sys_ph1_en) begin
       ext_ram_we_r <= 0;
     end
+
+    if (!ext_ram_we) ext_ram_done <= 0;
+    else if (ext_ram_we_r && sys_ph1_en) ext_ram_done <= 1;
   end
 
 
@@ -745,7 +776,7 @@ module core_top (
       .aw(16),
       .dw(8)
   ) u_c64_main_ram (
-      .clk (clk_8mhz),
+      .clk (clk_32mhz),
       .rst (rst),
       .ce  (1'b1),
       .oe  (1'b1),
@@ -760,7 +791,7 @@ module core_top (
       .aw(12),
       .dw(8)
   ) u_c64_char_rom (
-      .clk (clk_8mhz),
+      .clk (clk_32mhz),
       .rst (rst),
       .ce  (1'b1),
       .oe  (1'b1),
@@ -775,7 +806,7 @@ module core_top (
       .aw(13),
       .dw(8)
   ) u_c64_basic_rom (
-      .clk (clk_8mhz),
+      .clk (clk_32mhz),
       .rst (rst),
       .ce  (1'b1),
       .oe  (1'b1),
@@ -790,7 +821,7 @@ module core_top (
       .aw(13),
       .dw(8)
   ) u_c64_kernal_rom (
-      .clk (clk_8mhz),
+      .clk (clk_32mhz),
       .rst (rst),
       .ce  (1'b1),
       .oe  (1'b1),
@@ -880,7 +911,7 @@ module core_top (
       .aw(11),
       .dw(8)
   ) u_c1541_ram (
-      .clk (clk_8mhz),
+      .clk (clk_32mhz),
       .rst (rst),
       .ce  (1'b1),
       .oe  (1'b1),
@@ -894,7 +925,7 @@ module core_top (
       .aw(14),
       .dw(8)
   ) u_c1541_rom (
-      .clk (clk_8mhz),
+      .clk (clk_32mhz),
       .rst (rst),
       .ce  (1'b1),
       .oe  (1'b1),
@@ -1041,7 +1072,7 @@ module core_top (
         32'h2xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h3xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h4xxx_xxxx: cpu_mem_ready <= bridge_ack_pulse;
-        32'h5000_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid & ext_ram_ready;
+        32'h5000_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid & ext_ram_done;
         32'h51xx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid & clk_8mhz_1mhz_ph1_en;
         32'h5xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h7xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
@@ -1286,7 +1317,7 @@ module core_top (
                                     bridge_track_wr_data[(ti+1)*8-1:ti*8]),
           .a_dout(c1541_track_ram_rdata[(ti+1)*8-1:ti*8]),
 
-          .b_clk (clk_8mhz),
+          .b_clk (clk_32mhz),
           .b_wr  (1'b0),
           .b_addr(c1541_track_mem_addr),
           .b_din (8'h0),

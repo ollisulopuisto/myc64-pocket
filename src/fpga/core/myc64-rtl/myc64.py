@@ -143,7 +143,13 @@ class MyC64(Elaboratable):
     self.o_debug_6510_data = Signal(8)
     self.o_debug_6510_regs = Signal(64)
 
+    # Clock enable for the whole design (EnableInserter in __main__). core_top
+    # runs the system clock faster than the emulated 8 MHz and uses this to
+    # step it at 8 MHz normally, or every cycle in warp mode.
+    self.i_ce = Signal()
+
     self.ports = [
+        self.i_ce,
         self.i_clk_1mhz_ph1_en, self.i_clk_1mhz_ph2_en,
         self.o_vid_rgb, self.o_vid_hsync, self.o_vid_vsync, self.o_vid_en,
         self.i_sid_data, self.o_sid_cs, self.o_sid2_cs, self.o_sid_we, self.o_sid_addr, self.o_sid_data,
@@ -437,6 +443,7 @@ class MyC64(Elaboratable):
 #
 
 from amaranth.back import verilog
+from amaranth.hdl import EnableInserter
 import sys
 import os
 
@@ -445,4 +452,4 @@ if __name__ == "__main__":
   myc64 = MyC64()
 
   with open("myc64.v", "w") as f:
-    f.write(verilog.convert(elaboratable=myc64, name='myc64_top', ports=myc64.ports))
+    f.write(verilog.convert(elaboratable=EnableInserter({'sync': myc64.i_ce})(myc64), name='myc64_top', ports=myc64.ports))

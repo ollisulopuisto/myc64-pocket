@@ -58,7 +58,13 @@ class My1541(Elaboratable):
     self.o_debug_6502_data = Signal(8)
     self.o_debug_6502_regs = Signal(64)
 
+    # Clock enable for the whole design (EnableInserter in __main__). core_top
+    # runs the system clock faster than the emulated 8 MHz and uses this to
+    # step it at 8 MHz normally, or every cycle in warp mode.
+    self.i_ce = Signal()
+
     self.ports = [
+        self.i_ce,
         self.o_addr, self.i_rom_data, self.i_ram_data, self.o_ram_data, self.o_ram_we, self.o_track_addr,
         self.i_track_data, self.i_track_len, self.o_track_no, self.o_led_on, self.o_motor_on, self.i_clk_1mhz_ph1_en,
         self.i_clk_1mhz_ph2_en, self.i_iec_atn_in, self.i_iec_data_in, self.o_iec_data_out, self.i_iec_clock_in,
@@ -234,6 +240,7 @@ class My1541(Elaboratable):
 #
 
 from amaranth.back import verilog
+from amaranth.hdl import EnableInserter
 import sys
 import os
 
@@ -242,4 +249,4 @@ if __name__ == "__main__":
   my1541 = My1541()
 
   with open("my1541.v", "w") as f:
-    f.write(verilog.convert(elaboratable=my1541, name='my1541_top', ports=my1541.ports))
+    f.write(verilog.convert(elaboratable=EnableInserter({'sync': my1541.i_ce})(my1541), name='my1541_top', ports=my1541.ports))
