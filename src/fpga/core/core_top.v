@@ -1415,8 +1415,10 @@ module core_top (
     end
   end
 
-  // Any controller or keyboard input during warp cancels it until the motor
-  // stops (a held key would last 4x longer in emulated time).
+  // A new controller or keyboard press during warp cancels it until the motor
+  // stops (the player wants to interact; a held key would also last 4x
+  // longer in emulated time). Releases don't count: D64 autoboot lets go of
+  // RETURN after the load has already started.
   reg [15:0] key_prev;
   reg [63:0] kbd_prev;
   reg warp_inhibit;
@@ -1424,7 +1426,7 @@ module core_top (
     key_prev <= cont1_key_s;
     kbd_prev <= keyboard_mask;
     if (rst || !warp_req) warp_inhibit <= 0;
-    else if (warp_active && ((cont1_key_s != key_prev) || (keyboard_mask != kbd_prev))) warp_inhibit <= 1;
+    else if (warp_active && ((|(cont1_key_s & ~key_prev)) || (|(keyboard_mask & ~kbd_prev)))) warp_inhibit <= 1;
   end
 
   // No warp with a cartridge (PSRAM accesses are paced in real time) or
