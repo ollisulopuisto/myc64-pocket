@@ -61,6 +61,12 @@ static inline uint64_t pocket_c64_process_shortcuts(uint32_t cont1_key, bool *su
             if (btn_y) mask |= C64_KEYB_MASK_KEY(C64_KEY_ONE);
         }
     } else {
+        if (mod_r) {
+            // R held alone: face buttons type BASIC commands (handled in
+            // main.c); nothing reaches the joystick or keyboard meanwhile.
+            if (suppress_joystick) *suppress_joystick = true;
+            return 0;
+        }
         if (suppress_joystick) *suppress_joystick = false;
         // Unmodified: X -> Space, A -> Return (Y is fire, B is jump)
         if (btn_x) mask |= C64_KEYB_MASK_KEY(C64_KEY_SPACE);

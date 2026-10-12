@@ -152,6 +152,8 @@ void load_d64();
 void d64_irq();
 void d64_draw_status_bar();
 void d64_autoboot_trigger();
+typedef enum { C64_CMD_LOAD, C64_CMD_RUN, C64_CMD_LIST, C64_CMD_DIR } c64_command_t;
+void c64_type_command(c64_command_t cmd);
 extern volatile uint8_t d64_loaded;
 
 static inline uint32_t bits_get(uint32_t in, uint32_t pos, uint32_t width) {

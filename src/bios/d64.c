@@ -233,14 +233,62 @@ static const c64_key_chord_t autoboot_seq[] = {
     {0x01, 0x00}, // <RET>
 };
 
+static const c64_key_chord_t *autoboot_keys = autoboot_seq;
+static int autoboot_len = sizeof(autoboot_seq) / sizeof(autoboot_seq[0]);
 static int autoboot_idx = -1;
 static uint32_t autoboot_wait = 0;
 static uint8_t autoboot_state = 0; // 0=idle, 1=boot_wait, 2=typing, 3=type_release
 static uint64_t autoboot_mask;
 
+// R + face button shortcuts: type a BASIC command at the current prompt
+static const c64_key_chord_t type_load[] = {
+    {0x52, 0x00}, {0x46, 0x00}, {0x12, 0x00}, {0x22, 0x00}, // LOAD
+    {0x74, 0x00}, {0x73, 0x17}, {0x61, 0x00}, {0x73, 0x17}, // <SPACE>"*"
+    {0x57, 0x00}, {0x33, 0x00}, {0x57, 0x00}, {0x70, 0x00}, // ,8,1
+    {0x01, 0x00}};                                          // <RET>
+static const c64_key_chord_t type_run[] = {
+    {0x21, 0x00}, {0x36, 0x00}, {0x47, 0x00}, {0x01, 0x00}}; // RUN<RET>
+static const c64_key_chord_t type_list[] = {
+    {0x52, 0x00}, {0x41, 0x00}, {0x15, 0x00}, {0x26, 0x00}, {0x01, 0x00}}; // LIST<RET>
+static const c64_key_chord_t type_dir[] = {
+    {0x52, 0x00}, {0x46, 0x00}, {0x12, 0x00}, {0x22, 0x00}, // LOAD
+    {0x74, 0x00}, {0x73, 0x17}, {0x13, 0x17}, {0x73, 0x17}, // <SPACE>"$"
+    {0x57, 0x00}, {0x33, 0x00}, {0x01, 0x00}};              // ,8<RET>
+
+#define TYPE_SEQ(seq) (seq), (int)(sizeof(seq) / sizeof((seq)[0]))
+
+static void type_start(const c64_key_chord_t *keys, int len) {
+  if (autoboot_state != 0) // already typing
+    return;
+  autoboot_keys = keys;
+  autoboot_len = len;
+  autoboot_idx = 0;
+  autoboot_wait = timer_ticks;
+  autoboot_state = 2;
+}
+
+void c64_type_command(c64_command_t cmd) {
+  switch (cmd) {
+  case C64_CMD_LOAD:
+    type_start(TYPE_SEQ(type_load));
+    break;
+  case C64_CMD_RUN:
+    type_start(TYPE_SEQ(type_run));
+    break;
+  case C64_CMD_LIST:
+    type_start(TYPE_SEQ(type_list));
+    break;
+  case C64_CMD_DIR:
+    type_start(TYPE_SEQ(type_dir));
+    break;
+  }
+}
+
 void d64_autoboot_trigger(void) {
   // Reset C64 to clean BASIC prompt before auto-loading
   misc_reset_core(0);
+  autoboot_keys = autoboot_seq;
+  autoboot_len = sizeof(autoboot_seq) / sizeof(autoboot_seq[0]);
   autoboot_idx = 0;
   autoboot_wait = timer_ticks + 300; // wait ~3-4 seconds for C64 BASIC to boot
   autoboot_state = 1;
@@ -259,10 +307,10 @@ void d64_autoboot_poll(void) {
   case 2: // Press key (after the pause between keystrokes)
     if (timer_ticks < autoboot_wait)
       break;
-    if (autoboot_idx < (int)(sizeof(autoboot_seq) / sizeof(autoboot_seq[0]))) {
-      uint64_t mask = C64_KEYB_MASK_KEY(autoboot_seq[autoboot_idx].key1);
-      if (autoboot_seq[autoboot_idx].key2) {
-        mask |= C64_KEYB_MASK_KEY(autoboot_seq[autoboot_idx].key2);
+    if (autoboot_idx < autoboot_len) {
+      uint64_t mask = C64_KEYB_MASK_KEY(autoboot_keys[autoboot_idx].key1);
+      if (autoboot_keys[autoboot_idx].key2) {
+        mask |= C64_KEYB_MASK_KEY(autoboot_keys[autoboot_idx].key2);
       }
       autoboot_mask = mask;
       c64_isr_keyb_mask = mask;
@@ -297,8 +345,8 @@ void d64_irq() {
     return;
   }
 
+  d64_autoboot_poll(); // also drives the R + button typed commands
   if (!d64_loaded) return;
-  d64_autoboot_poll();
 
   uint8_t prev_led = d64_led_on;
   uint8_t prev_motor = d64_motor_on;

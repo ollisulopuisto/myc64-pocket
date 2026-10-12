@@ -23,6 +23,11 @@ int main() {
     assert(!suppress);
     assert(mask == 0);
 
+    printf("Testing C64 R alone (typed commands, no joystick/keys)...\n");
+    mask = pocket_c64_process_shortcuts((1 << 9) | (1 << 4), &suppress);
+    assert(suppress);
+    assert(mask == 0);
+
     printf("Testing C64 L modifier...\n");
     // L held alone -> joystick suppressed, no keys
     mask = pocket_c64_process_shortcuts(1 << 8, &suppress);

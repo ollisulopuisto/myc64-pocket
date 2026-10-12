@@ -133,6 +133,11 @@ The core features full, native in-core `.d64` support with on-the-fly GCR bitstr
   * D-pad: `F2` (Up), `F4` (Right), `F6` (Down), `F8` (Left)
   * Face buttons: `Space` (A), `N` (B), `Y` (X), `2` (Y)
   * Start: `Commodore (C=)` key
+* **Hold R (typed commands)**: types a BASIC command at the prompt
+  * A: `LOAD"*",8,1` + RETURN
+  * B: `RUN` + RETURN
+  * X: `LIST` + RETURN
+  * Y: `LOAD"$",8` + RETURN (disk directory)
 * **Base Face Buttons**:
   * Button Y: Fire
   * Button B: Jump (Up)
