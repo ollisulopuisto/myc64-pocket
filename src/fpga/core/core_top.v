@@ -1078,7 +1078,7 @@ module core_top (
           .rst (rst),
           .ce  (osd_ram_access || (cpu_mem_valid && cpu_mem_addr[31:28] == 4'h1)),
           .oe  (1'b1),
-          .addr(osd_ram_access ? {2'b00, osd_mem_addr[9:0]} : cpu_mem_addr[13:2]),
+          .addr(ram_addr[13:2]),
           .do  (ram_rdata[(gi+1)*8-1:gi*8]),
           .di  (ram_wdata[(gi+1)*8-1:gi*8]),
           .we  (ram_wstrb[gi])
