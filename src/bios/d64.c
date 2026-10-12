@@ -208,6 +208,80 @@ void load_d64() {
 
   d64_track_no = 0xff;
   d64_loaded = 1;
+  d64_autoboot_trigger();
+}
+
+// Auto-load keystroke injection: LOAD "*",8,1 <RET> RUN <RET>
+typedef struct {
+  uint8_t key1;
+  uint8_t key2; // e.g. Shift
+} c64_key_chord_t;
+
+static const c64_key_chord_t autoboot_seq[] = {
+    {0x52, 0x00}, // L
+    {0x46, 0x00}, // O
+    {0x12, 0x00}, // A
+    {0x22, 0x00}, // D
+    {0x74, 0x00}, // <SPACE>
+    {0x73, 0x17}, // " (Shift + 2)
+    {0x61, 0x00}, // *
+    {0x73, 0x17}, // " (Shift + 2)
+    {0x57, 0x00}, // ,
+    {0x33, 0x00}, // 8
+    {0x57, 0x00}, // ,
+    {0x70, 0x00}, // 1
+    {0x01, 0x00}, // <RET>
+};
+
+static int autoboot_idx = -1;
+static uint32_t autoboot_wait = 0;
+static uint8_t autoboot_state = 0; // 0=idle, 1=boot_wait, 2=typing, 3=type_release
+
+void d64_autoboot_trigger(void) {
+  // Reset C64 to clean BASIC prompt before auto-loading
+  misc_reset_core(0);
+  autoboot_idx = 0;
+  autoboot_wait = timer_ticks + 300; // wait ~3-4 seconds for C64 BASIC to boot
+  autoboot_state = 1;
+}
+
+void d64_autoboot_poll(void) {
+  switch (autoboot_state) {
+  case 1: // Wait for C64 boot
+    c64_isr_keyb_mask = 0;
+    if (timer_ticks >= autoboot_wait) {
+      autoboot_idx = 0;
+      autoboot_state = 2; // Press first key
+    }
+    break;
+
+  case 2: // Press key
+    if (autoboot_idx < (int)(sizeof(autoboot_seq) / sizeof(autoboot_seq[0]))) {
+      uint64_t mask = C64_KEYB_MASK_KEY(autoboot_seq[autoboot_idx].key1);
+      if (autoboot_seq[autoboot_idx].key2) {
+        mask |= C64_KEYB_MASK_KEY(autoboot_seq[autoboot_idx].key2);
+      }
+      c64_isr_keyb_mask = mask;
+      autoboot_wait = timer_ticks + 10; // Hold key for 10 ticks
+      autoboot_state = 3;
+    } else {
+      c64_isr_keyb_mask = 0;
+      autoboot_state = 0; // Finished
+    }
+    break;
+
+  case 3: // Release key
+    if (timer_ticks >= autoboot_wait) {
+      c64_isr_keyb_mask = 0;
+      autoboot_wait = timer_ticks + 10; // Pause between keystrokes
+      autoboot_idx++;
+      autoboot_state = 2;
+    }
+    break;
+
+  default:
+    break;
+  }
 }
 
 void d64_irq() {
@@ -217,6 +291,8 @@ void d64_irq() {
   }
 
   if (!d64_loaded) return;
+
+  d64_autoboot_poll();
 
   uint32_t status = *C1541_STATUS;
   uint8_t req_track_no = status & 0x7f;

@@ -147,6 +147,7 @@ void misc_reset_core(uint8_t cart_type);
 void load_d64();
 void d64_irq();
 void d64_draw_status_bar();
+void d64_autoboot_trigger();
 extern volatile uint8_t d64_loaded;
 
 static inline uint32_t bits_get(uint32_t in, uint32_t pos, uint32_t width) {
