@@ -6,4 +6,4 @@ RUN apt-get update -qq && \
 
 WORKDIR /src
 
-CMD ["bash", "-c", "clang tests/test_c64_shortcuts.c -o test_shortcuts && ./test_shortcuts && cd src/bios && make clean && make"]
+CMD ["bash", "-c", "clang tests/test_c64_shortcuts.c -o test_shortcuts && ./test_shortcuts && clang tests/test_d64_gcr.c -o test_d64_gcr && ./test_d64_gcr && cd src/bios && make clean && make"]

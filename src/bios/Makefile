@@ -1,4 +1,4 @@
-OBJS = bridge.o crts.o g64.o keyboard-ext.o keyboard-virt.o main.o misc.o osd.o prgs.o start.o
+OBJS = bridge.o crts.o d64.o g64.o keyboard-ext.o keyboard-virt.o main.o misc.o osd.o prgs.o start.o
 
 all: bios.vh
 

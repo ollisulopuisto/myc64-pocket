@@ -913,6 +913,7 @@ module core_top (
       32'h3000_0100: cpu_mem_rdata = {c1541_motor_on, c1541_led_on, c1541_track_no};
       32'h4xxx_xxxx: cpu_mem_rdata = bridge_rdata;
       32'h7xxx_xxxx: cpu_mem_rdata = bridge_dpram_rdata;
+      32'h8xxx_xxxx: cpu_mem_rdata = c1541_track_ram_rdata;
       32'h9xxx_xxxx: cpu_mem_rdata = dataslot_table_rd_data_cpu;
       default: cpu_mem_rdata = 0;
     endcase
@@ -967,6 +968,7 @@ module core_top (
         32'h51xx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid & clk_8mhz_1mhz_ph1_en;
         32'h5xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h7xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
+        32'h8xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h9xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         default: cpu_mem_ready <= 0;
       endcase
@@ -975,7 +977,7 @@ module core_top (
 
   // ROM - CPU code.
   sprom #(
-      .aw(11),
+      .aw(12),
       .dw(32),
       .MEM_INIT_FILE("bios.vh")
   ) u_rom (
@@ -983,7 +985,7 @@ module core_top (
       .rst (rst),
       .ce  (cpu_mem_valid && cpu_mem_addr[31:28] == 4'h0),
       .oe  (1'b1),
-      .addr(cpu_mem_addr[31:2]),
+      .addr(cpu_mem_addr[13:2]),
       .do  (rom_rdata)
   );
 
@@ -992,14 +994,14 @@ module core_top (
   generate
     for (gi = 0; gi < 4; gi = gi + 1) begin : ram
       spram #(
-          .aw(10),
+          .aw(12),
           .dw(8)
       ) u_ram (
           .clk (clk_8mhz),
           .rst (rst),
           .ce  (osd_ram_access || (cpu_mem_valid && cpu_mem_addr[31:28] == 4'h1)),
           .oe  (1'b1),
-          .addr(ram_addr[31:2]),
+          .addr(osd_ram_access ? {2'b00, osd_mem_addr[9:0]} : cpu_mem_addr[13:2]),
           .do  (ram_rdata[(gi+1)*8-1:gi*8]),
           .di  (ram_wdata[(gi+1)*8-1:gi*8]),
           .we  (ram_wstrb[gi])
@@ -1158,24 +1160,37 @@ module core_top (
       .b_dout(dataslot_table_rd_data_cpu)
   );
 
-  // 8KB of DP track memory for 1541. Fed by bridge, read by 1541
-  bram_block_dp #(
-      .DATA(32),
-      .ADDR(11)
-  ) u_bridge_1541_track_ram (
-      .a_clk(clk_74a),
-      .a_wr(bridge_wr && bridge_addr[31:28] == 4'h9),
-      .a_addr(bridge_addr[31:2]),
-      .a_din({
-        bridge_wr_data[7:0], bridge_wr_data[15:8], bridge_wr_data[23:16], bridge_wr_data[31:24]
-      }),
-      .a_dout(  /* NC */),
+  // 8KB of DP track memory for 1541. Fed by bridge or CPU, read by 1541
+  wire [31:0] c1541_track_ram_rdata;
+  wire cpu_track_ram_wr = cpu_mem_valid && cpu_mem_addr[31:28] == 4'h8;
 
-      .b_clk (clk_8mhz),
-      .b_wr  (1'b0),
-      .b_addr(c1541_track_mem_addr),
-      .b_din (32'h0),
-      .b_dout(c1541_track_mem_data)
-  );
+  // Port A is clocked by clk_8mhz for CPU writes, or clk_74a for Bridge DMA writes
+  // Since Bridge DMA occurs during load_g64 while CPU waits on TARGET_0, we can mux clock and writes cleanly:
+  wire bridge_track_ram_wr = bridge_wr && bridge_addr[31:28] == 4'h9;
+
+  genvar ti;
+  generate
+    for (ti = 0; ti < 4; ti = ti + 1) begin : track_ram_lane
+      bram_block_dp #(
+          .DATA(8),
+          .ADDR(11)
+      ) u_track_lane (
+          .a_clk (cpu_track_ram_wr ? clk_8mhz : clk_74a),
+          .a_wr  (cpu_track_ram_wr ? cpu_mem_wstrb[ti] : bridge_track_ram_wr),
+          .a_addr(cpu_track_ram_wr ? cpu_mem_addr[12:2] : bridge_addr[12:2]),
+          .a_din (cpu_track_ram_wr ? cpu_mem_wdata[(ti+1)*8-1:ti*8] : 
+                  (ti == 0 ? bridge_wr_data[7:0] :
+                   ti == 1 ? bridge_wr_data[15:8] :
+                   ti == 2 ? bridge_wr_data[23:16] : bridge_wr_data[31:24])),
+          .a_dout(c1541_track_ram_rdata[(ti+1)*8-1:ti*8]),
+
+          .b_clk (clk_8mhz),
+          .b_wr  (1'b0),
+          .b_addr(c1541_track_mem_addr),
+          .b_din (8'h0),
+          .b_dout(c1541_track_mem_data[(ti+1)*8-1:ti*8])
+      );
+    end
+  endgenerate
 
 endmodule

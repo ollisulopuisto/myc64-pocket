@@ -9,5 +9,6 @@
 __pycache__/
 *.pyc
 tests/test_c64_shortcuts
+tests/test_d64_gcr
 src/fpga/core/myc64-rtl/myc64.v
 src/fpga/core/my1541-rtl/my1541.v

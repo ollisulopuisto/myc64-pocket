@@ -31,6 +31,9 @@
 #define CRT_SLOT_ID 0
 #define PRG_SLOT_ID 1
 #define G64_SLOT_ID 2
+#define D64_SLOT_ID 3
+
+#define C1541_TRACK_RAM ((volatile uint8_t *)0x80000000)
 
 #define CONT1_KEY ((volatile uint32_t *)0x20000000)
 #define CONT2_KEY ((volatile uint32_t *)0x20000004)
@@ -137,6 +140,14 @@ void irq_mask(uint32_t mask);
 void timer_start(uint32_t timeout);
 
 void misc_reset_core(uint8_t cart_type);
+
+//
+// D64
+//
+void load_d64();
+void d64_irq();
+void d64_draw_status_bar();
+extern volatile uint8_t d64_loaded;
 
 static inline uint32_t bits_get(uint32_t in, uint32_t pos, uint32_t width) {
   uint32_t mask = (1 << width) - 1;

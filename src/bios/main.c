@@ -125,7 +125,10 @@ int main(void) {
       break;
     }
     case OSD_STATUS_BAR:
-      g64_draw_status_bar();
+      if (d64_loaded)
+        d64_draw_status_bar();
+      else
+        g64_draw_status_bar();
       break;
     case OSD_OFF:
       break;
@@ -147,6 +150,7 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   prgs_irq();
   crts_irq();
   g64_irq();
+  d64_irq();
 
   // Prologue
   cont1_key = *CONT1_KEY;
