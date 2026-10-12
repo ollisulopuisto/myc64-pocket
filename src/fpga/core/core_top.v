@@ -1245,11 +1245,32 @@ module core_top (
 
   // 8KB of DP track memory for 1541. Fed by bridge or CPU, read by 1541
   wire [31:0] c1541_track_ram_rdata;
-  wire cpu_track_ram_wr = cpu_mem_valid && cpu_mem_addr[31:28] == 4'h8;
-
-  // Port A is clocked by clk_8mhz for CPU writes, or clk_74a for Bridge DMA writes
-  // Since Bridge DMA occurs during load_g64 while CPU waits on TARGET_0, we can mux clock and writes cleanly:
   wire bridge_track_ram_wr = bridge_wr && bridge_addr[31:28] == 4'h9;
+
+  // CPU writes (D64 track synthesis) are latched in clk_8mhz and replayed in
+  // clk_74a, so port A stays on a single clock. A CPU access lasts >= 2 clk_8mhz
+  // cycles, which leaves the latched values stable well past the synchronizer.
+  reg [10:0] cpu_track_wr_addr;
+  reg [31:0] cpu_track_wr_data;
+  reg [3:0] cpu_track_wr_strb;
+  reg cpu_track_wr_toggle = 0;
+  always @(posedge clk_8mhz) begin
+    if (cpu_mem_valid && !cpu_mem_ready && cpu_mem_addr[31:28] == 4'h8 && |cpu_mem_wstrb) begin
+      cpu_track_wr_addr   <= cpu_mem_addr[12:2];
+      cpu_track_wr_data   <= cpu_mem_wdata;
+      cpu_track_wr_strb   <= cpu_mem_wstrb;
+      cpu_track_wr_toggle <= ~cpu_track_wr_toggle;
+    end
+  end
+
+  reg [2:0] cpu_track_wr_sync = 0;
+  always @(posedge clk_74a) cpu_track_wr_sync <= {cpu_track_wr_sync[1:0], cpu_track_wr_toggle};
+  wire cpu_track_wr_74 = cpu_track_wr_sync[2] ^ cpu_track_wr_sync[1];
+
+  // Bridge data is big-endian; byte-swap so file byte n lands in lane n%4
+  wire [31:0] bridge_track_wr_data = {
+    bridge_wr_data[7:0], bridge_wr_data[15:8], bridge_wr_data[23:16], bridge_wr_data[31:24]
+  };
 
   genvar ti;
   generate
@@ -1258,13 +1279,11 @@ module core_top (
           .DATA(8),
           .ADDR(11)
       ) u_track_lane (
-          .a_clk (cpu_track_ram_wr ? clk_8mhz : clk_74a),
-          .a_wr  (cpu_track_ram_wr ? cpu_mem_wstrb[ti] : bridge_track_ram_wr),
-          .a_addr(cpu_track_ram_wr ? cpu_mem_addr[12:2] : bridge_addr[12:2]),
-          .a_din (cpu_track_ram_wr ? cpu_mem_wdata[(ti+1)*8-1:ti*8] : 
-                  (ti == 0 ? bridge_wr_data[7:0] :
-                   ti == 1 ? bridge_wr_data[15:8] :
-                   ti == 2 ? bridge_wr_data[23:16] : bridge_wr_data[31:24])),
+          .a_clk (clk_74a),
+          .a_wr  (cpu_track_wr_74 ? cpu_track_wr_strb[ti] : bridge_track_ram_wr),
+          .a_addr(cpu_track_wr_74 ? cpu_track_wr_addr : bridge_addr[12:2]),
+          .a_din (cpu_track_wr_74 ? cpu_track_wr_data[(ti+1)*8-1:ti*8] :
+                                    bridge_track_wr_data[(ti+1)*8-1:ti*8]),
           .a_dout(c1541_track_ram_rdata[(ti+1)*8-1:ti*8]),
 
           .b_clk (clk_8mhz),
