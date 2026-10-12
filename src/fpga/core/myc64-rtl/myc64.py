@@ -25,7 +25,7 @@ from vicii import VicII
 
 class Cartridge(Elaboratable):
   def __init__(self):
-    self.i_cart_type = Signal(2)
+    self.i_cart_type = Signal(3)
 
     self.i_addr = Signal(16)
     self.i_we = Signal()
@@ -47,7 +47,9 @@ class Cartridge(Elaboratable):
     self.o_mem_data = Signal(8)
     self.i_mem_data = Signal(8)
 
-    self.i_freeze = Signal()
+    self.i_freeze = Signal()  # freeze button (level)
+    self.o_io1_drive = Signal()  # cartridge answers reads in IO1 ($DExx)
+    self.o_active = Signal()  # cartridge maps something into the C64
 
   def elaborate(self, platform):
     m = Module()
@@ -55,9 +57,25 @@ class Cartridge(Elaboratable):
     reg_de00 = Signal(8)
     reg_de02 = Signal(8)
 
+    freeze_p = Signal()
+    m.d.sync += freeze_p.eq(self.i_freeze)
+    freeze_rise = self.i_freeze & ~freeze_p
+
     m.d.comb += [self.o_exrom.eq(1), self.o_game.eq(1)]
     m.d.comb += [self.o_mem_we.eq(0)]
     m.d.comb += [self.o_data.eq(self.i_mem_data), self.o_mem_data.eq(self.i_data)]
+    m.d.comb += [self.o_io1_drive.eq(0), self.o_nmi.eq(0), self.o_active.eq(self.i_cart_type != 0)]
+
+    # Retro Replay state (see VICE src/c64/cart/retroreplay.c)
+    rr_active = Signal(init=1)
+    rr_frozen = Signal()
+    rr_bank = Signal(3)
+    rr_cmode = Signal(2)  # bit 0: GAME asserted, bit 1: EXROM deasserted
+    rr_export_ram = Signal()
+    rr_allow_bank = Signal()
+    rr_no_freeze = Signal()
+    rr_reu_map = Signal()
+    rr_write_once = Signal()
 
     with m.Switch(self.i_cart_type):
       with m.Case(0): # No cartridge
@@ -94,12 +112,84 @@ class Cartridge(Elaboratable):
         with m.If(self.i_io2): #reg_de00[5] &
           m.d.comb += [self.o_mem_addr.eq(0x11f00 + self.i_addr[0:8]), self.o_mem_we.eq(self.i_we)]
 
+        # Freeze: NMI while the button is held, Ultimax mode with ROM bank 0
+        m.d.comb += self.o_nmi.eq(self.i_freeze)
+        with m.If(freeze_rise):
+          m.d.sync += reg_de00.eq(0x03)
+
+      with m.Case(4): # Retro Replay (64K flash, 32K RAM; no flash mode, no Nordic Replay)
+        cmode = Signal(2)
+        m.d.comb += cmode.eq(Mux(rr_frozen, 0b11, rr_cmode))
+        ultimax = cmode == 0b11
+        game16k = cmode == 0b01
+        m.d.comb += self.o_active.eq(rr_active)
+        with m.If(rr_active):
+          m.d.comb += [self.o_game.eq(~cmode[0]), self.o_exrom.eq(cmode[1])]
+
+        rom_bank_addr = Cat(self.i_addr[0:13], rr_bank)  # 64K ROM at 0x00000
+        ram_bank = Mux(rr_allow_bank, rr_bank[0:2], 0)
+        m.d.comb += self.o_mem_addr.eq(rom_bank_addr)
+
+        # $8000-$9FFF (ROML): RAM or ROM; writes reach RAM in Ultimax mode
+        with m.If(self.i_roml):
+          with m.If(rr_export_ram):
+            m.d.comb += [self.o_mem_addr.eq(0x10000 + Cat(self.i_addr[0:13], rr_bank[0:2])),
+                         self.o_mem_we.eq(self.i_we & ultimax)]
+        # ROMH: with RAM selected and AllowBank clear, bank bits 0-1 are ignored
+        with m.If(self.i_romh & rr_export_ram & ~rr_allow_bank):
+          m.d.comb += self.o_mem_addr.eq(Cat(self.i_addr[0:13], C(0, 2), rr_bank[2]))
+
+        # IO2 ($DFxx; $DExx with the REU compatible map): last page of the bank
+        io_ram = Signal()
+        io_page = Signal(16)
+        m.d.comb += [io_ram.eq(rr_active & ~rr_frozen & rr_export_ram),
+                     io_page.eq(Mux(rr_reu_map, 0x1e00, 0x1f00) + self.i_addr[0:8])]
+        io_sel = Mux(rr_reu_map, self.i_io1 & (self.i_addr[0:8] >= 2), self.i_io2)
+        with m.If(io_sel):
+          with m.If(io_ram):
+            m.d.comb += [self.o_mem_addr.eq(0x10000 + Cat(io_page[0:13], ram_bank)),
+                         self.o_mem_we.eq(self.i_we)]
+          with m.Else():
+            m.d.comb += self.o_mem_addr.eq(Cat(io_page[0:13], rr_bank))
+          with m.If(rr_reu_map & rr_active & ~rr_frozen & (io_ram | ~(ultimax | game16k))):
+            m.d.comb += self.o_io1_drive.eq(1)
+
+        # $DE00/$DE01 read: status
+        with m.If(self.i_io1 & rr_active & (self.i_addr[1:8] == 0)):
+          m.d.comb += [self.o_io1_drive.eq(1),
+                       self.o_data.eq(Cat(C(0, 1), rr_allow_bank, self.i_freeze, rr_bank[0:2], C(0, 1),
+                                          rr_reu_map, rr_bank[2]))]
+
+        # Register writes
+        with m.If(self.i_io1 & self.i_we & rr_active):
+          with m.If(self.i_addr[0:8] == 0x00):
+            m.d.sync += [rr_bank.eq(Cat(self.i_data[3:5], self.i_data[7])),
+                         rr_cmode.eq(self.i_data[0:2]),
+                         rr_export_ram.eq(self.i_data[5])]
+            with m.If(self.i_data[6]):
+              m.d.sync += rr_frozen.eq(0)
+            with m.If(self.i_data[2]):
+              m.d.sync += rr_active.eq(0)
+          with m.If(self.i_addr[0:8] == 0x01):
+            m.d.sync += rr_bank.eq(Cat(self.i_data[3:5], self.i_data[7]))
+            with m.If(~rr_write_once):
+              m.d.sync += [rr_allow_bank.eq(self.i_data[1]), rr_no_freeze.eq(self.i_data[2]),
+                           rr_reu_map.eq(self.i_data[6]), rr_write_once.eq(1)]
+
+        # Freeze: NMI while held, then Ultimax until $DE00 bit 6 is written
+        with m.If(~rr_no_freeze):
+          m.d.comb += self.o_nmi.eq(self.i_freeze)
+          with m.If(freeze_rise):
+            m.d.sync += [rr_active.eq(1), rr_frozen.eq(1)]
+
     return m
 
 
 
 class MyC64(Elaboratable):
   def __init__(self):
+    self.i_freeze = Signal()  # cartridge freeze button
+    self.o_cart_active = Signal()
     self.i_clk_1mhz_ph1_en = Signal()
     self.i_clk_1mhz_ph2_en = Signal()
 
@@ -131,7 +221,7 @@ class MyC64(Elaboratable):
     self.i_iec_clock_in = Signal()
     self.o_iec_clock_out = Signal()
 
-    self.i_cart_type = Signal(2)
+    self.i_cart_type = Signal(3)
     self.o_cart_addr = Signal(21)
     self.o_cart_we = Signal()
     self.i_cart_data = Signal(8)
@@ -157,7 +247,7 @@ class MyC64(Elaboratable):
         self.o_bus_addr, self.i_rom_char_data, self.i_rom_basic_data, self.i_rom_kernal_data,
         self.i_ram_main_data, self.o_ram_main_data, self.o_ram_main_we,
         self.o_iec_atn_out, self.i_iec_data_in , self.o_iec_data_out, self.i_iec_clock_in, self.o_iec_clock_out,
-        self.i_cart_type, self.o_cart_addr, self.o_cart_we, self.i_cart_data, self.o_cart_data,
+        self.i_cart_type, self.i_freeze, self.o_cart_active, self.o_cart_addr, self.o_cart_we, self.i_cart_data, self.o_cart_data,
         self.o_debug_6510_valid, self.o_debug_6510_sync, self.o_debug_6510_addr, self.o_debug_6510_data, self.o_debug_6510_regs
     ]
 
@@ -222,6 +312,8 @@ class MyC64(Elaboratable):
 
     m.d.comb += [
         u_cart.i_cart_type.eq(self.i_cart_type),
+        u_cart.i_freeze.eq(self.i_freeze),
+        self.o_cart_active.eq(u_cart.o_active),
         u_cart.i_addr.eq(bus_addr),
         u_cart.i_data.eq(bus_do),
         u_cart.i_we.eq(bus_we),
@@ -308,6 +400,8 @@ class MyC64(Elaboratable):
           # Handle cartridge IO1/IO2
           with m.If(cpu_addr[8:16] == 0xDE):
             m.d.comb += u_cart.i_io1.eq(1)
+            with m.If(u_cart.o_io1_drive):
+              m.d.comb += cpu_di.eq(u_cart.o_data)
           with m.If(cpu_addr[8:16] == 0xDF):
             m.d.comb += [u_cart.i_io2.eq(1), cpu_di.eq(u_cart.o_data)]
 
@@ -333,6 +427,7 @@ class MyC64(Elaboratable):
     m.d.comb += [
         u_cpu.i_data.eq(cpu_di),
         u_cpu.i_irq.eq(u_cia1.o_irq | u_vic.o_irq),
+        u_cpu.i_nmi.eq(u_cia2.o_irq | u_cart.o_nmi),
         cpu_addr.eq(u_cpu.o_addr),
         cpu_we.eq(u_cpu.o_we),
         cpu_do.eq(u_cpu.o_data),

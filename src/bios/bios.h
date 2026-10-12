@@ -52,6 +52,8 @@
 #define KEYB_MASK_0 ((volatile uint32_t *)0x30000004)
 #define KEYB_MASK_1 ((volatile uint32_t *)0x30000008)
 #define C64_CTRL ((volatile uint32_t *)0x3000000c)
+// Cartridge freeze button (Action Replay / Retro Replay), level
+#define CART_FREEZE ((volatile uint32_t *)0x30000010)
 
 #define C1541_STATUS ((volatile uint32_t *)0x30000100)
 #define C1541_TRACK_LEN ((volatile uint32_t *)0x30000104)

@@ -532,6 +532,7 @@ module core_top (
 
   // VIC-II output (clk_32mhz, changes only on sys_ce) registered into the
   // 8 MHz video domain; one uniform stage for sync, enable and colour.
+  wire c64_cart_active;
   wire [23:0] c64_vid_rgb;
   wire c64_vid_hs, c64_vid_vs, c64_vid_de;
   // While warp mode runs the system faster than real time (vid_locked = 0),
@@ -652,7 +653,9 @@ module core_top (
       .o_iec_data_out(iec_c64_data_out),
       .i_iec_clock_in(iec_clock),
       .o_iec_clock_out(iec_c64_clock_out),
-      .i_cart_type(c64_ctrl[6:5]),
+      .i_cart_type(c64_ctrl[7:5]),
+      .i_freeze(cart_freeze),
+      .o_cart_active(c64_cart_active),
       .o_cart_addr(c64_cart_addr),
       .o_cart_we(c64_cart_we),
       .i_cart_data(c64_cart_idata),
@@ -1040,13 +1043,19 @@ module core_top (
       osd_ctrl <= cpu_mem_wdata;
   end
 
-  reg [6:0] c64_ctrl;
+  reg [7:0] c64_ctrl;
+  reg cart_freeze;  // freeze button for Action Replay / Retro Replay
   reg [12:0] c1541_track_len;
   reg [7:0] c1541_track_ack;  // {valid, track_no}: BIOS has this track in track RAM
   always @(posedge clk_8mhz) begin
-    if (rst) c64_ctrl <= 0;
+    if (rst) begin
+      c64_ctrl <= 0;
+      cart_freeze <= 0;
+    end
     else if (cpu_mem_addr == 32'h3000000c && cpu_mem_valid && cpu_mem_wstrb == 4'b1111)
-      c64_ctrl <= cpu_mem_wdata[6:0];
+      c64_ctrl <= cpu_mem_wdata[7:0];
+    else if (cpu_mem_addr == 32'h30000010 && cpu_mem_valid && cpu_mem_wstrb == 4'b1111)
+      cart_freeze <= cpu_mem_wdata[0];
     else if (cpu_mem_addr == 32'h30000108 && cpu_mem_valid && cpu_mem_wstrb == 4'b1111)
       c1541_track_ack <= cpu_mem_wdata[7:0];
     else if (cpu_mem_addr == 32'h30000104 && cpu_mem_valid && cpu_mem_wstrb == 4'b1111) begin
@@ -1429,11 +1438,12 @@ module core_top (
     else if (warp_active && ((|(cont1_key_s & ~key_prev)) || (|(keyboard_mask & ~kbd_prev)))) warp_inhibit <= 1;
   end
 
-  // No warp with a cartridge (PSRAM accesses are paced in real time) or
-  // during C64 reset.
+  // No warp while a cartridge is mapped in (PSRAM accesses are paced in real
+  // time; a Retro Replay that has switched itself off is fine) or during
+  // C64 reset.
   always @(posedge clk_32mhz) begin
     if (rst) warp_active <= 0;
-    else warp_active <= warp_mode_s && warp_req && !warp_inhibit && (c64_ctrl[6:5] == 2'b00) && !ph_synced_rst;
+    else warp_active <= warp_mode_s && warp_req && !warp_inhibit && !c64_cart_active && !ph_synced_rst;
   end
 
   // Track change freeze: in warp the BIOS's 10 ms track synthesis delay would

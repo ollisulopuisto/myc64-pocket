@@ -183,6 +183,9 @@ Note that on the C64 keyboard `"` is `<SHIFT>+2` and `$` is `<SHIFT>+4` (read
 the section about sticky keys for how to access the shift modifier on the
 virtual keyboard).
 
+### Cartridges
+Supported `.crt` types: Magic Desk, EasyFlash, Action Replay and Retro Replay (64K, normal mode; no flash mode or Nordic Replay). **L + R + Select** is the freeze button for Action Replay and Retro Replay. Warp stays off while a cartridge is mapped in; a Retro Replay that has switched itself off (e.g. after starting a game) no longer blocks it.
+
 ### Warp (fast disk loading)
 Core menu **Warp (fast load)**: *Auto while loading* (default) or *Off*. In Auto, once the 1541 motor has run for ~20 ms the whole C64 and drive run 4x faster, together, so custom fastloaders and copy protection keep working. The screen goes black (the drive status bar shows `WARP`) and sound is muted; ~250 ms after the motor stops the picture returns. Pressing any button or key during warp cancels it until the motor stops. Warp is not used while a cartridge is inserted.
 

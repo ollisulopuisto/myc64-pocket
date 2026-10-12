@@ -192,8 +192,14 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   }
   navigation_keys_prev = navigation_keys;
 
+  // L + R + Select: cartridge freeze button, held as long as the buttons are
+  *CART_FREEZE = (osd_mode == OSD_OFF) && KEYB_DOWN(trig_l1) && KEYB_DOWN(trig_r1) &&
+                 KEYB_DOWN(face_select);
+
   if (KEYB_POSEDGE(face_select)) {
-    if (KEYB_DOWN(trig_l1)) {
+    if (KEYB_DOWN(trig_l1) && KEYB_DOWN(trig_r1)) {
+      // Freeze, see above
+    } else if (KEYB_DOWN(trig_l1)) {
       // L + Select: Swap joystick ports on the fly
       uint8_t active_port = 1;
       if (mod_l_active) {

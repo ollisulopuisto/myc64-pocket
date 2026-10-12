@@ -39,6 +39,9 @@ static void load_crt(uint16_t slot_id) {
   case 1: // Action Replay
     crt_type = 3;
     break;
+  case 36: // Retro Replay
+    crt_type = 4;
+    break;
   default: // Unsupported format
     return;
   }
