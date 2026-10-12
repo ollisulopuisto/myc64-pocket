@@ -3,7 +3,7 @@
         "magic": "APF_VER_1",
         "data_slots": [
     {
-        "name": "Load & Start CRT",
+        "name": ".CRT (Cartridge)",
         "id": "0",
         "required": false,
         "deferload": true,
@@ -12,7 +12,7 @@
         "extensions": ["crt"]
     },
     {
-        "name": "Load & Start PRG",
+        "name": ".PRG (Program)",
         "id": "1",
         "required": false,
         "deferload": true,
@@ -21,22 +21,22 @@
         "extensions": ["prg"]
     },
     {
-        "name": "G64 Slot",
-        "id": "2",
-        "required": false,
-        "deferload": true,
-        "parameters": 9,
-        "filename": "",
-        "extensions": ["g64"]
-    },
-    {
-        "name": "Load D64 Disk",
+        "name": ".D64 (Floppy Disk)",
         "id": "3",
         "required": false,
         "deferload": true,
         "parameters": 9,
         "filename": "",
         "extensions": ["d64"]
+    },
+    {
+        "name": ".G64 (Raw Disk)",
+        "id": "2",
+        "required": false,
+        "deferload": true,
+        "parameters": 9,
+        "filename": "",
+        "extensions": ["g64"]
     },
     {
         "name": "Basic ROM",

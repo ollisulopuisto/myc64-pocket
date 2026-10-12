@@ -3,40 +3,6 @@
     "magic": "APF_VER_1",
     "variables": [
       {
-        "name": "OSD x-offset",
-        "id": 0,
-        "type": "slider_u32",
-        "enabled": true,
-        "address": "0xA0000000",
-        "writeonly": true,
-        "persist": true,
-        "defaultval": 1,
-        "graphical": {
-          "signed": false,
-          "min": 1,
-          "max": 127,
-          "adjust_small": 1,
-          "adjust_large": 8
-        }
-      },
-      {
-        "name": "OSD y-offset",
-        "id": 1,
-        "type": "slider_u32",
-        "enabled": true,
-        "address": "0xA0000004",
-        "writeonly": true,
-        "persist": true,
-        "defaultval": 1,
-        "graphical": {
-          "signed": false,
-          "min": 1,
-          "max": 200,
-          "adjust_small": 1,
-          "adjust_large": 8
-        }
-      },
-      {
         "name": "Control Mode",
         "id": 2,
         "type": "list",
@@ -49,34 +15,6 @@
           { "value": 0, "name": "Standard (D-pad & B)" },
           { "value": 1, "name": "Platformer (Btn B Jump)" },
           { "value": 2, "name": "Driving (L=Brake, R=Gas)" }
-        ]
-      },
-      {
-        "name": "SID Model",
-        "id": 3,
-        "type": "list",
-        "enabled": true,
-        "address": "0xA000000C",
-        "writeonly": true,
-        "persist": true,
-        "defaultval": 0,
-        "options": [
-          { "value": 0, "name": "MOS 6581 (Warm / Filter Dist)" },
-          { "value": 1, "name": "MOS 8580 (Clean / Crisp)" }
-        ]
-      },
-      {
-        "name": "SID Mode",
-        "id": 4,
-        "type": "list",
-        "enabled": true,
-        "address": "0xA0000010",
-        "writeonly": true,
-        "persist": true,
-        "defaultval": 0,
-        "options": [
-          { "value": 0, "name": "Mono (Single SID $D400)" },
-          { "value": 1, "name": "Stereo (Dual SID $D400/$D420)" }
         ]
       },
       {
@@ -117,6 +55,68 @@
           { "value": 3, "name": "START: Commodore (C=)" }
         ],
         "writeonly": true
+      },
+      {
+        "name": "SID Model",
+        "id": 3,
+        "type": "list",
+        "enabled": true,
+        "address": "0xA000000C",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "MOS 6581 (Warm / Filter Dist)" },
+          { "value": 1, "name": "MOS 8580 (Clean / Crisp)" }
+        ]
+      },
+      {
+        "name": "SID Mode",
+        "id": 4,
+        "type": "list",
+        "enabled": true,
+        "address": "0xA0000010",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 0,
+        "options": [
+          { "value": 0, "name": "Mono (Single SID $D400)" },
+          { "value": 1, "name": "Stereo (Dual SID $D400/$D420)" }
+        ]
+      },
+      {
+        "name": "OSD x-offset",
+        "id": 0,
+        "type": "slider_u32",
+        "enabled": true,
+        "address": "0xA0000000",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 1,
+        "graphical": {
+          "signed": false,
+          "min": 1,
+          "max": 127,
+          "adjust_small": 1,
+          "adjust_large": 8
+        }
+      },
+      {
+        "name": "OSD y-offset",
+        "id": 1,
+        "type": "slider_u32",
+        "enabled": true,
+        "address": "0xA0000004",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 1,
+        "graphical": {
+          "signed": false,
+          "min": 1,
+          "max": 200,
+          "adjust_small": 1,
+          "adjust_large": 8
+        }
       }
     ]
   }
