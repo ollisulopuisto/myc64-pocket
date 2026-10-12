@@ -1160,7 +1160,7 @@ module core_top (
     control_mode <= 0;
     sid_model    <= 0; // Default to 6581
     sid_dual     <= 0; // Default to Mono
-    warp_mode    <= 0;
+    warp_mode    <= 1; // Auto
   end
 
   always @(posedge clk_74a) begin

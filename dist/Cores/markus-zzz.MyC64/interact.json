@@ -144,7 +144,7 @@
         "address": "0xA0000014",
         "writeonly": true,
         "persist": true,
-        "defaultval": 0,
+        "defaultval": 1,
         "options": [
           {
             "value": 0,

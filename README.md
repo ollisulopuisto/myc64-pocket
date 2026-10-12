@@ -184,7 +184,7 @@ the section about sticky keys for how to access the shift modifier on the
 virtual keyboard).
 
 ### Warp (fast disk loading)
-Core menu **Warp (fast load)**: *Off* (default) or *Auto while loading*. In Auto, once the 1541 motor has run for ~20 ms the whole C64 and drive run 4x faster, together, so custom fastloaders and copy protection keep working. The screen goes black (the drive status bar shows `WARP`) and sound is muted; ~250 ms after the motor stops the picture returns. Pressing any button or key during warp cancels it until the motor stops. Warp is not used while a cartridge is inserted.
+Core menu **Warp (fast load)**: *Auto while loading* (default) or *Off*. In Auto, once the 1541 motor has run for ~20 ms the whole C64 and drive run 4x faster, together, so custom fastloaders and copy protection keep working. The screen goes black (the drive status bar shows `WARP`) and sound is muted; ~250 ms after the motor stops the picture returns. Pressing any button or key during warp cancels it until the motor stops. Warp is not used while a cartridge is inserted.
 
 ## General usage
 
