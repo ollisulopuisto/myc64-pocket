@@ -65,6 +65,14 @@ uint8_t updated_slots;
 
 static volatile int osd_idx;
 osd_mode_t osd_mode;
+static uint32_t joy_notify_timeout = 0;
+static uint8_t joy_notify_port = 0;
+
+void joy_swap_notify(uint8_t port) {
+  joy_notify_port = port;
+  joy_notify_timeout = timer_ticks + 250; // show message for ~2.5 seconds
+  osd_mode = OSD_STATUS_BAR;
+}
 
 int main(void) {
 
@@ -125,10 +133,13 @@ int main(void) {
       break;
     }
     case OSD_STATUS_BAR:
-      if (d64_loaded)
+      if (timer_ticks < joy_notify_timeout) {
+        osd_printf(0, 0, "[C64 JOYSTICK PORT %d ACTIVE] ", joy_notify_port);
+      } else if (d64_loaded) {
         d64_draw_status_bar();
-      else
+      } else {
         g64_draw_status_bar();
+      }
       break;
     case OSD_OFF:
       break;
@@ -173,17 +184,21 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   if (KEYB_POSEDGE(face_select)) {
     if (KEYB_DOWN(trig_l1)) {
       // L + Select: Swap joystick ports on the fly
+      uint8_t active_port = 1;
       if (mod_l_active) {
         // Swap saved joy mapping
         uint8_t tmp = c64_saved_joy1;
         c64_saved_joy1 = c64_saved_joy2;
         c64_saved_joy2 = tmp;
+        active_port = (c64_saved_joy2 == 1) ? 2 : 1;
       } else {
         uint8_t j1 = bits_get(*C64_CTRL, 1, 2);
         uint8_t j2 = bits_get(*C64_CTRL, 3, 2);
         *C64_CTRL = bits_set(*C64_CTRL, 1, 2, j2);
         *C64_CTRL = bits_set(*C64_CTRL, 3, 2, j1);
+        active_port = (j1 == 1) ? 2 : 1;
       }
+      joy_swap_notify(active_port);
     } else {
       if (osd_mode == OSD_FULL) {
         osd_mode = OSD_OFF;
@@ -225,6 +240,10 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
     *OSD_CTRL = 1;
     break;
   case OSD_STATUS_BAR:
+    if (joy_notify_timeout && timer_ticks >= joy_notify_timeout && !d64_loaded) {
+      osd_mode = OSD_OFF;
+      joy_notify_timeout = 0;
+    }
     *OSD_CTRL = 3;
     break;
   case OSD_OFF:

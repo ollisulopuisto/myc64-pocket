@@ -109,34 +109,33 @@ Cartridges of unsupported formats are silently ignored (and no reset is
 triggered).
 
 
-### D64/G64
+### D64 & G64 Disk Images
 
-The core contains emulation of a [Commodore
-1541](https://en.wikipedia.org/wiki/Commodore_1541) floppy disk drive
-(currently read-only). Emulation is low level and the real ROMs are used.  As a
-result the decode circuitry need to have the raw
-[GCR](https://en.wikipedia.org/wiki/Group_coded_recording) bitstream (that the
-read head of a real drive would see) as its input.
+The core features full, native in-core `.d64` support with on-the-fly GCR bitstream synthesis in hardware, as well as raw `.g64` image support!
 
-In other words the common `.d64`
-[format](http://unusedino.de/ec64/technical/formats/d64.html) is not directly
-supported but rather the lower level `.g64`
-[format](http://www.unusedino.de/ec64/technical/formats/g64.html) must be used.
+* **Native `.d64` loading**: Simply place your `.d64` images in `/media/Assets/c64/common/` (or subdirectories). Select **Load & Mount D64** from the core menu.
+* **Automatic Fast Boot**: Inserting a `.d64` automatically resets the C64 to clean BASIC prompt and injects `LOAD "*",8,1` followed by `RUN`.
+* **Track / Motor Status Bar**: The core displays an unobtrusive track and drive activity HUD whenever the 1541 disk drive is seeking.
 
-A bit further down the road the housekeeping CPU could probably perform this
-conversion on the fly but right now `.d64` files need to be converted to `.g64`
-format manually.
+## Pocket Controls & In-Game Shortcuts
 
-The utility program `nibconv` from
-[NIBTools](https://c64preservation.com/dp.php?pg=nibtools) can be used to
-convert between `.d64` and `.g64`.
+### Control Modes (Core Menu)
+* **Standard (D-pad & B)**: Classic joystick where D-pad Up or Face B jumps, Face A fires, X is Space, and Y is Return.
+* **Platformer (Btn B Jump)**: Pure button jump layout for platformers (*Giana Sisters*, *Turrican*, *Mayhem in Monsterland*). Button B is exclusively Jump (Up), disabling D-pad Up jump.
+* **Driving (L=Brake, R=Gas)**: Dedicated racing layout. Right trigger is Gas (Up), Left trigger is Brake/Reverse (Down).
 
-Usage example:
-
-```sh
-$ nibconv somedisk.d64 somedisk.g64
-```
-#### Obtaining nibtools
+### Shortcuts & Port Swap
+* **Hold L + Press Select (Joystick Port 1/2 Swap)**: Swaps joystick ports on the fly with a clear on-screen OSD notification (`[C64 JOYSTICK PORT 1/2 ACTIVE]`).
+* **Hold L-Trigger (Shortcut Layer 1)**:
+  * D-pad: `F1` (Up), `F3` (Right), `F5` (Down), `F7` (Left)
+  * Face buttons: `Space` (A), `Return` (B), `Run/Stop` (X), `1` (Y)
+* **Hold L + R Triggers (Shortcut Layer 2)**:
+  * D-pad: `F2` (Up), `F4` (Right), `F6` (Down), `F8` (Left)
+  * Face buttons: `Space` (A), `N` (B), `Y` (X), `2` (Y)
+  * Start: `Commodore (C=)` key
+* **Base Face Buttons**:
+  * Button X: `Space`
+  * Button Y: `Return`
 
 ##### Windows
 
