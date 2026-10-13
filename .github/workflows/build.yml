@@ -1,0 +1,139 @@
+name: Build MyC64 Core and Release
+
+on:
+  push:
+    branches: [ baseline/** ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  QUARTUS_CACHE_KEY: quartus-lite-25.1std.0.1129-cyclonev-v2
+
+jobs:
+  bios-and-tests:
+    name: Build BIOS and run unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image and run build
+        run: |
+          docker build -t c64-builder .
+          docker run --rm -v ${{ github.workspace }}:/src c64-builder
+
+      - name: Upload BIOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: myc64-bios
+          path: |
+            src/bios/bios.bin
+            src/bios/bios.vh
+
+  quartus-cache:
+    name: Download and cache Quartus installers
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - id: c
+        uses: actions/cache@v4
+        with:
+          path: ~/quartus-dl
+          key: ${{ env.QUARTUS_CACHE_KEY }}
+      - name: Download installers on cache miss
+        if: steps.c.outputs.cache-hit != 'true'
+        env:
+          ASSETS_TOKEN: ${{ secrets.ASSETS_TOKEN }}
+        run: DOWNLOAD_ONLY=1 .github/scripts/install_quartus.sh
+
+  build-fpga:
+    name: Compile FPGA Core (Quartus)
+    needs: [bios-and-tests, quartus-cache]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download compiled BIOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: myc64-bios
+          path: src/bios
+
+      - name: Copy bios.vh to core directory
+        run: |
+          ls -la src/bios/
+          cp src/bios/bios.vh src/fpga/core/ || true
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip zip \
+            libtinfo5 libncurses5 libpng16-16 libfreetype6 libsm6 libxrender1 libxext6 libxtst6 libxi6 libxft2 locales
+          pip3 install --upgrade pip
+          pip3 install "amaranth==0.5.10" "amaranth-yosys==0.40.0.0.post103"
+
+      - name: Generate Verilog from Amaranth RTL
+        run: |
+          pushd src/fpga/core/myc64-rtl
+          python3 myc64.py
+          popd
+          pushd src/fpga/core/my1541-rtl
+          python3 my1541.py
+          popd
+          ls -lh src/fpga/core/myc64-rtl/myc64.v src/fpga/core/my1541-rtl/my1541.v
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/quartus-dl
+          key: ${{ env.QUARTUS_CACHE_KEY }}
+
+      - name: Install Quartus Lite 25.1std
+        env:
+          ASSETS_TOKEN: ${{ secrets.ASSETS_TOKEN }}
+        run: .github/scripts/install_quartus.sh
+
+      - name: Compile FPGA bitstream with Quartus
+        run: |
+          cd src/fpga
+          "$QUARTUS_BIN/quartus_sh" --flow compile ap_core.qpf 2>&1 | tee ../../compile.log | tail -n 40
+          cd ../..
+          cat src/fpga/output_files/ap_core.fit.summary || true
+
+      - name: Package Core Release Zip
+        run: |
+          DIST=dist
+          STAGING=_staging_
+          DATE=$(date +'%Y-%m-%d')
+          VERSION=${GITHUB_SHA::7}
+
+          rm -rf ${STAGING}
+          cp -r ${DIST} ${STAGING}
+
+          python3 utils/reverse-bits.py src/fpga/output_files/ap_core.rbf ${STAGING}/Cores/markus-zzz.MyC64/bitstream.rbf_r
+          sed -i "s/VERSION/${VERSION}/" ${STAGING}/Cores/markus-zzz.MyC64/core.json
+          sed -i "s/DATE_RELEASE/${DATE}/" ${STAGING}/Cores/markus-zzz.MyC64/core.json
+
+          pushd ${STAGING}
+          zip -r ../MyC64-Pocket.zip .
+          popd
+          ls -lh MyC64-Pocket.zip
+
+      - name: Upload Core Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: myc64-pocket-release
+          path: |
+            MyC64-Pocket.zip
+            src/fpga/output_files/ap_core.rbf
+            src/fpga/output_files/*.fit.summary
+            src/fpga/output_files/*.sta.summary
