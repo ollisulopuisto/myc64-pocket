@@ -57,6 +57,7 @@ uint32_t cont1_key = 0;
 
 uint64_t c64_keyb_mask = 0;
 uint64_t c64_isr_keyb_mask = 0;
+static uint8_t ss_load_seen;
 static uint8_t c64_saved_joy1 = 0;
 static uint8_t c64_saved_joy2 = 0;
 static bool mod_l_active = false;
@@ -111,8 +112,10 @@ int main(void) {
 
   *C64_CTRL = bits_set(*C64_CTRL, 1, 2, 2); // Joystick1 = cont2
   *C64_CTRL = bits_set(*C64_CTRL, 3, 2, 1); // Joystick2 = cont1
+  // A state restored on wake waits for BIOS_READY, before the C64 leaves reset
+  ss_load_seen = *SS_LOAD_CNT; // counts loads since power-on, not since reset
+  *BIOS_READY = 1;
   *C64_CTRL = bits_set(*C64_CTRL, 0, 1, 1); // Release reset for MyC64
-  *BIOS_READY = 1; // a savestate restored before this point may now run
 
   cont1_key_p = 0;
   cont1_key = 0;
@@ -190,7 +193,6 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
 
   // A savestate was loaded: before the slot handlers, so updates in the same
   // tick are already treated as plain inserts
-  static uint8_t ss_load_seen;
   uint8_t ss_load_cnt = *SS_LOAD_CNT;
   if (ss_load_cnt != ss_load_seen) {
     ss_load_seen = ss_load_cnt;

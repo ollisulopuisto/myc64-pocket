@@ -420,10 +420,10 @@ module core_top (
   reg ss_ack_tgl;
   reg [1:0] ss_save_res, ss_load_res;
   reg [7:0] ss_load_cnt;  // completed loads, read by the BIOS (0x3000_0114)
-  reg ss_wait_bios;       // loaded, paused until the BIOS is ready
   wire [31:0] ss_bridge_rd_data;
   reg [31:0] ss_bridge_rd_q;
   reg ss_glue_load;     // savestate load: restore tk, ph_synced_rst, VIC raster shadow
+  wire ss_rst_load;     // savestate load: chip reset off before shifting (reset beats the chain)
   reg [31:0] ss_glue;   // {tk, ph_synced_rst, scyc, sy, sx}
   localparam [31:0] SS_SIZE = 32'h0002_0000;
   reg warp_active;
@@ -440,7 +440,7 @@ module core_top (
   reg ph_synced_rst;
   always @(posedge clk_32mhz) begin
     if (rst) ph_synced_rst <= 1;
-    else if (ss_glue_load) ph_synced_rst <= ss_glue[24];
+    else if (ss_glue_load || ss_rst_load) ph_synced_rst <= ss_glue[24];
     else if (sys_ph2_en) ph_synced_rst <= ~c64_ctrl[0];
   end
 
@@ -1750,10 +1750,17 @@ module core_top (
   synch_3 s_ss_lrd (ss_last_rd_tgl, ss_last_rd_s, clk_32mhz);
   synch_3 s_ss_wrs (ss_wr_seen_tgl, ss_wr_seen_s, clk_32mhz);
 
+  // The Pocket may restore a sleep state while the core is still held in reset
+  // (reset_n low), so this logic only has a power-on reset; such a load is
+  // acknowledged at once and applied when reset is released and the BIOS is ready.
+  reg [3:0] ss_por = 0;
+  always @(posedge clk_32mhz) if (!ss_por[3]) ss_por <= ss_por + 1'b1;
+  wire ss_rst = !ss_por[3];
+
   localparam [3:0] SS_IDLE = 4'd0, SS_SV_SETTLE = 4'd1, SS_SV_CAPTURE = 4'd2, SS_SV_C64 = 4'd3,
                    SS_SV_1541 = 4'd4, SS_SV_HDR = 4'd5, SS_SV_SID = 4'd6, SS_HOLD = 4'd7,
                    SS_LD_HDR = 4'd8, SS_LD_C64 = 4'd9, SS_LD_1541 = 4'd10, SS_LD_CPU = 4'd11,
-                   SS_LD_SID = 4'd12, SS_LD_DONE = 4'd13;
+                   SS_LD_SID = 4'd12, SS_LD_DONE = 4'd13, SS_LD_WAIT = 4'd14;
   reg [3:0] ss_state;
   reg [8:0] ss_k;          // word / register index within the current step
   reg ss_rd_phase;         // load: 0 = address issued, 1 = data available
@@ -1772,6 +1779,7 @@ module core_top (
   assign ss_1541_si = (ss_state == SS_SV_1541) ? ss_1541_so : ss_ra_dout;
   assign ss_capture = (ss_state == SS_SV_CAPTURE);
   assign ss_cpu_load = (ss_state == SS_LD_CPU);
+  assign ss_rst_load = (ss_state == SS_LD_C64) && ss_hdr_ok && (ss_k == 0) && !ss_rd_phase;
 
   wire [31:0] ss_glue_now = {4'd0, tk, ph_synced_rst, scyc, sy, sx};
 
@@ -1814,7 +1822,7 @@ module core_top (
   always @(posedge clk_32mhz) begin
     ss_glue_load <= 0;
     ss_sid_inject <= 0;
-    if (rst) begin
+    if (ss_rst) begin
       ss_state <= SS_IDLE;
       ss_pause <= 0;
       ss_ack_tgl <= 0;
@@ -1831,14 +1839,8 @@ module core_top (
       ss_rd_phase <= 0;
       ss_ra_addr <= 0;
       ss_load_cnt <= 0;
-      ss_wait_bios <= 0;
     end else begin
       ss_tmr <= (ss_hold_read || ss_hold_load) ? ss_tmr + 1'b1 : 27'd0;
-
-      if (ss_wait_bios && bios_ready_s) begin
-        ss_wait_bios <= 0;
-        ss_pause <= 0;
-      end
 
       // A write into the window: a load is coming, stop the system
       if (ss_wr_seen_s != ss_wr_seen) begin
@@ -1882,12 +1884,26 @@ module core_top (
               ss_rd_phase <= 0;
               if (!ss_req_op_s) begin
                 ss_state <= SS_SV_SETTLE;
+              end else if (rst || !bios_ready_s) begin
+                // Wake from sleep: the Pocket waits for this load before it
+                // releases reset, so report it done and apply it afterwards
+                ss_load_res <= 2'd2;
+                ss_ack_tgl <= ss_req_tgl_s;
+                ss_state <= SS_LD_WAIT;
               end else begin
                 ss_state <= SS_LD_HDR;
                 ss_ra_addr <= 0;
                 ss_hdr_ok <= 1;
               end
             end
+          end
+        end
+
+        SS_LD_WAIT: begin
+          if (!rst && bios_ready_s) begin
+            ss_state <= SS_LD_HDR;
+            ss_ra_addr <= 0;
+            ss_hdr_ok <= 1;
           end
         end
 
@@ -2017,8 +2033,7 @@ module core_top (
           ss_load_res <= 2'd2;
           ss_ack_tgl <= ss_req_seen;
           ss_load_cnt <= ss_load_cnt + 1'b1;
-          ss_pause <= !bios_ready_s;
-          ss_wait_bios <= !bios_ready_s;
+          ss_pause <= 0;
           ss_state <= SS_IDLE;
         end
         default: ss_state <= SS_IDLE;
