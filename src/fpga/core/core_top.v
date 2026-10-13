@@ -322,6 +322,9 @@ module core_top (
       32'hBxxxxxxx: begin
         bridge_rd_data <= ss_bridge_rd_q;
       end
+      32'hA00000xx: begin
+        bridge_rd_data <= ia_rd_q;
+      end
       default: begin
         bridge_rd_data <= cmd_bridge_rd_data;
       end
@@ -1395,6 +1398,26 @@ module core_top (
         32'hA000_0018: drive_snd_level <= bridge_wr_data[1:0];
       endcase
     end
+  end
+
+  // Menu readback: the Pocket reads each setting before writing it back, so
+  // return the whole word last written (latched on bridge_rd, like the rest)
+  (* ramstyle = "logic" *) reg [31:0] ia_word[0:6];
+  reg [31:0] ia_rd_q;
+  initial begin
+    ia_word[0] = 1;
+    ia_word[1] = 1;
+    ia_word[2] = 0;
+    ia_word[3] = 0;
+    ia_word[4] = 0;
+    ia_word[5] = 1;
+    ia_word[6] = 2;
+  end
+  always @(posedge clk_74a) begin
+    if (bridge_wr && bridge_addr[31:5] == 27'h500_0000 && bridge_addr[4:2] != 3'd7)
+      ia_word[bridge_addr[4:2]] <= bridge_wr_data;
+    if (bridge_rd)
+      ia_rd_q <= (bridge_addr[31:5] == 27'h500_0000 && bridge_addr[4:2] != 3'd7) ? ia_word[bridge_addr[4:2]] : 32'h0;
   end
 
   reg [8:0] video_pos_x;

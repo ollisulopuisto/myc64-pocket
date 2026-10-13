@@ -8,7 +8,6 @@
         "type": "list",
         "enabled": true,
         "address": "0xA0000008",
-        "writeonly": true,
         "persist": true,
         "defaultval": 0,
         "options": [
@@ -106,7 +105,6 @@
         "type": "list",
         "enabled": true,
         "address": "0xA000000C",
-        "writeonly": true,
         "persist": true,
         "defaultval": 0,
         "options": [
@@ -126,7 +124,6 @@
         "type": "list",
         "enabled": true,
         "address": "0xA0000010",
-        "writeonly": true,
         "persist": true,
         "defaultval": 0,
         "options": [
@@ -146,7 +143,6 @@
         "type": "list",
         "enabled": true,
         "address": "0xA0000014",
-        "writeonly": true,
         "persist": true,
         "defaultval": 1,
         "options": [
@@ -166,7 +162,6 @@
         "type": "list",
         "enabled": true,
         "address": "0xA0000018",
-        "writeonly": true,
         "persist": true,
         "defaultval": 2,
         "options": [
@@ -194,7 +189,6 @@
         "type": "slider_u32",
         "enabled": true,
         "address": "0xA0000000",
-        "writeonly": true,
         "persist": true,
         "defaultval": 1,
         "graphical": {
@@ -211,7 +205,6 @@
         "type": "slider_u32",
         "enabled": true,
         "address": "0xA0000004",
-        "writeonly": true,
         "persist": true,
         "defaultval": 1,
         "graphical": {
