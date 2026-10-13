@@ -281,7 +281,10 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
     keyboard_ext_handle();
   }
 
-  if (osd_mode == OSD_OFF && KEYB_DOWN(trig_r1) && !KEYB_DOWN(trig_l1)) {
+  // Driving mode: L and R are the pedals, never shortcut modifiers
+  bool driving = (*CONTROL_MODE == 2);
+
+  if (osd_mode == OSD_OFF && !driving && KEYB_DOWN(trig_r1) && !KEYB_DOWN(trig_l1)) {
     // R + face button: type a command at the BASIC prompt
     if (KEYB_POSEDGE(face_a))
       c64_type_command(C64_CMD_LOAD);
@@ -295,7 +298,8 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
 
   if (osd_mode == OSD_OFF) {
     bool suppress_joy = false;
-    uint64_t shortcut_mask = pocket_c64_process_shortcuts(cont1_key, &suppress_joy);
+    uint64_t shortcut_mask = pocket_c64_process_shortcuts(driving ? cont1_key & ~((1u << 8) | (1u << 9)) : cont1_key,
+                                                          &suppress_joy);
     c64_keyb_mask |= shortcut_mask;
     if (suppress_joy) {
       if (!mod_l_active) {

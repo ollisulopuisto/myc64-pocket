@@ -124,7 +124,7 @@ Principle: face buttons on their own are joystick only and never type keys, so t
 
 * **Standard (D-pad & B)**: Classic joystick. A, X and Y fire (A is where the Pocket's own accept button is); D-pad Up or B jumps (joystick up).
 * **Platformer (Btn B Jump)**: Pure button jump layout for platformers (*Giana Sisters*, *Turrican*, *Mayhem in Monsterland*). Button B is exclusively Jump (Up), disabling D-pad Up jump.
-* **Driving (L=Brake, R=Gas)**: Dedicated racing layout. Right trigger is Gas (Up), Left trigger is Brake/Reverse (Down); all four face buttons fire.
+* **Driving (L=Brake, R=Gas)**: Dedicated racing layout. Right trigger is Gas (Up), Left trigger is Brake/Reverse (Down); all four face buttons fire. L and R are only pedals here, so the shortcut layers and typed commands are off.
 
 ### Shortcuts & Port Swap
 * **Hold L + Press Select (Joystick Port 1/2 Swap)**: Swaps joystick ports on the fly with a clear on-screen OSD notification (`[C64 JOYSTICK PORT 1/2 ACTIVE]`).

@@ -1157,6 +1157,7 @@ module core_top (
       32'h2000_002c: cpu_mem_rdata = cont4_trig_s;
       32'h3000_000c: cpu_mem_rdata = c64_ctrl;
       32'h3000_0100: cpu_mem_rdata = {warp_active, c1541_motor_on, c1541_led_on, c1541_track_no};
+      32'h3000_0110: cpu_mem_rdata = {30'd0, control_mode};  // menu setting, static
       32'h4xxx_xxxx: cpu_mem_rdata = bridge_rdata;
       32'h7xxx_xxxx: cpu_mem_rdata = bridge_dpram_rdata;
       32'h8xxx_xxxx: cpu_mem_rdata = c1541_track_ram_rdata;

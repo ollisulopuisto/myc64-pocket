@@ -56,6 +56,7 @@
 #define CART_FREEZE ((volatile uint32_t *)0x30000010)
 
 #define C1541_STATUS ((volatile uint32_t *)0x30000100)
+#define CONTROL_MODE ((volatile uint32_t *)0x30000110) // 0 Standard, 1 Platformer, 2 Driving
 #define C1541_TRACK_LEN ((volatile uint32_t *)0x30000104)
 // {valid, track_no}: tells warp mode the requested track is in track RAM
 #define C1541_TRACK_ACK ((volatile uint32_t *)0x30000108)
