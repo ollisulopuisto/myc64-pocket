@@ -7,17 +7,17 @@
                 "mappings": [
                     {
                         "id": 0,
-                        "name": "Return",
+                        "name": "Fire",
                         "key": "pad_btn_a"
                     },
                     {
                         "id": 1,
-                        "name": "Jump (Up)",
+                        "name": "Jump / Fire",
                         "key": "pad_btn_b"
                     },
                     {
                         "id": 2,
-                        "name": "Space",
+                        "name": "Fire",
                         "key": "pad_btn_x"
                     },
                     {
@@ -27,12 +27,12 @@
                     },
                     {
                         "id": 4,
-                        "name": "Shortcut",
+                        "name": "Keys / Brake",
                         "key": "pad_trig_l"
                     },
                     {
                         "id": 5,
-                        "name": "Shift",
+                        "name": "Commands / Gas",
                         "key": "pad_trig_r"
                     },
                     {
@@ -42,7 +42,7 @@
                     },
                     {
                         "id": 7,
-                        "name": "Run/Stop",
+                        "name": "C= (L+R)",
                         "key": "pad_btn_start"
                     }
                 ]
