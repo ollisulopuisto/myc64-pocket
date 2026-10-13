@@ -208,7 +208,10 @@ void load_d64() {
 
   d64_track_no = 0xff;
   d64_loaded = 1;
-  d64_autoboot_trigger();
+  // With a cartridge plugged in (e.g. Retro Replay) just insert the disk:
+  // autoboot resets without the cartridge and types into its menu.
+  if (bits_get(*C64_CTRL, 5, 3) == 0)
+    d64_autoboot_trigger();
 }
 
 // Auto-load keystroke injection: LOAD "*",8,1 <RET> RUN <RET>
