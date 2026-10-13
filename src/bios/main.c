@@ -33,6 +33,7 @@ void keyboard_virt_draw();
 void prgs_irq();
 
 void crts_irq();
+void crts_boot();
 
 void g64_draw_status_bar();
 void g64_irq();
@@ -112,6 +113,7 @@ int main(void) {
 
   *C64_CTRL = bits_set(*C64_CTRL, 1, 2, 2); // Joystick1 = cont2
   *C64_CTRL = bits_set(*C64_CTRL, 3, 2, 1); // Joystick2 = cont1
+  crts_boot();
   // A state restored on wake waits for BIOS_READY, before the C64 leaves reset
   ss_load_seen = *SS_LOAD_CNT; // counts loads since power-on, not since reset
   *BIOS_READY = 1;

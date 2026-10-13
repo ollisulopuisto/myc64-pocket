@@ -20,7 +20,7 @@
 
 #include "bios.h"
 
-static void load_crt(uint16_t slot_id) {
+static void load_crt(uint16_t slot_id, int at_boot) {
   uint8_t *ROM_LO = (uint8_t *)0x51000000;
   uint8_t *ROM_HI = ROM_LO + (1 << 19);
   uint32_t slot_length = bridge_ds_get_length(slot_id);
@@ -69,14 +69,18 @@ static void load_crt(uint16_t slot_id) {
     chip_packet_base += chip_packet_length;
   }
 
-  if (timer_ticks < ss_suppress_until)
+  if (at_boot || timer_ticks < ss_suppress_until)
     *C64_CTRL = bits_set(*C64_CTRL, 5, 3, crt_type); // restored state: no reset
   else
     misc_reset_core(crt_type); // Reset C64 and 1541
 }
 
+// Before BIOS_READY: the ROM must be in place before a state restored on wake
+// runs (the C64 is still in reset, so only the cartridge type is set)
+void crts_boot() { load_crt(CRT_SLOT_ID, 1); }
+
 void crts_irq() {
   if (updated_slots & (1 << CRT_SLOT_ID)) {
-    load_crt(CRT_SLOT_ID);
+    load_crt(CRT_SLOT_ID, 0);
   }
 }
