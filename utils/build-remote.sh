@@ -49,17 +49,24 @@ echo "== Verilog"
 (cd src/fpga/core/my1541-rtl && "$PY" my1541.py)
 
 echo "== Quartus on $HOST"
-# Shared host: utils/run-quartus.ps1 follows the rules agreed with the other
-# Pocket sessions (registry in E:\locks, RAM and run limits, no kills by name).
+# Shared host: jobs go through the shared launcher E:\fpga-shared\qrun.ps1
+# (rules in E:\fpga-shared\RULES.txt, lead: the Pocket PSX session). It admits
+# the job when there is room, runs it detached from ssh and writes the exit
+# code to <log>.done; we poll that. Session name: pocket-c64.
 mkdir -p "$WORK/src"
 cp -R src/fpga "$WORK/src/fpga"
 rm -rf "$WORK/src/fpga/output_files" "$WORK/src/fpga/db" "$WORK/src/fpga/incremental_db"
 rm -f "$WORK/src/fpga/bios.vh"  # symlink to ../bios/bios.vh
 cp "$WORK/bios/bios.vh" "$WORK/src/fpga/bios.vh"
-cp utils/run-quartus.ps1 "$WORK/src/"
 ssh "$HOST" "if exist $REMOTE_DIR\\fpga\\output_files rmdir /s /q $REMOTE_DIR\\fpga\\output_files"
-COPYFILE_DISABLE=1 tar -C "$WORK/src" -czf - fpga run-quartus.ps1 | ssh "$HOST" "(if not exist $REMOTE_DIR mkdir $REMOTE_DIR) & tar -xzf - -C $REMOTE_DIR"
-if ! ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -File %USERPROFILE%\\$REMOTE_DIR\\run-quartus.ps1 $QUARTUS %USERPROFILE%\\$REMOTE_DIR\\fpga" > "$WORK/compile.log" 2>&1; then
+COPYFILE_DISABLE=1 tar -C "$WORK/src" -czf - fpga | ssh "$HOST" "(if not exist $REMOTE_DIR mkdir $REMOTE_DIR) & tar -xzf - -C $REMOTE_DIR"
+QLOG="%USERPROFILE%\\$REMOTE_DIR\\fpga\\qrun-c64.log"
+QOUT=$(ssh "$HOST" "del /q $QLOG $QLOG.done 2>nul & powershell -NoProfile -File E:\\fpga-shared\\qrun.ps1 -Session pocket-c64 -WorkDir %USERPROFILE%\\$REMOTE_DIR\\fpga -Log $QLOG -Command \"quartus_sh --flow compile ap_core.qpf\"" | tr -d '\r' | tail -1)
+echo "$QOUT"
+case "$QOUT" in STARTED*) ;; *) echo "qrun did not start the job"; exit 1 ;; esac
+until CODE=$(ssh "$HOST" "type $QLOG.done" 2>/dev/null | tr -dc 0-9) && [ -n "$CODE" ]; do sleep 20; done
+ssh "$HOST" "type $QLOG" 2>/dev/null | tr -d '\r' > "$WORK/compile.log"
+if [ "$CODE" != 0 ]; then
   ssh "$HOST" "findstr /b /c:Error $REMOTE_DIR\\fpga\\output_files\\ap_core.*.rpt" 2>/dev/null | tr -d '\r' | head -20
   exit 1
 fi
