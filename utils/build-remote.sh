@@ -49,6 +49,22 @@ echo "== Verilog"
 (cd src/fpga/core/my1541-rtl && "$PY" my1541.py)
 
 echo "== Quartus on $HOST"
+# Shared host (agreed with the other Pocket sessions): never kill Quartus by
+# image name; announce the run in E:\\locks\\<session>.txt (project dir, start
+# time) and delete it when done; start only with >= 6 GB free RAM and < 4 registered runs.
+REG='E:\\locks\\pocket-c64.txt'
+host_busy() {
+  local free runs
+  free=$(ssh "$HOST" "powershell -NoProfile -Command \"[int]((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB)\"" | tr -dc 0-9)
+  runs=$(ssh "$HOST" "dir /b E:\\locks\\*.txt 2>nul" | tr -d '\r' | grep -c . || true)
+  [ "${free:-0}" -lt 6 ] || [ "$runs" -ge 4 ]
+}
+while host_busy; do
+  echo "waiting: $HOST has < 6 GB free or >= 4 compiles registered in E:\\locks"
+  sleep 30
+done
+ssh "$HOST" "(if not exist E:\\locks mkdir E:\\locks) & echo Pocket Commodore myc64-pocket, dir %USERPROFILE%\\$REMOTE_DIR\\fpga, started $(date '+%Y-%m-%d %H:%M'), quartus_sh --flow compile ap_core.qpf> $REG"
+trap 'ssh "$HOST" "del $REG" >/dev/null 2>&1; rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/src"
 cp -R src/fpga "$WORK/src/fpga"
 rm -rf "$WORK/src/fpga/output_files" "$WORK/src/fpga/db" "$WORK/src/fpga/incremental_db"
