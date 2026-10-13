@@ -42,6 +42,7 @@ class My1541(Elaboratable):
     self.o_track_no = Signal(7)
     self.o_led_on = Signal()
     self.o_motor_on = Signal()
+    self.o_head_phase = Signal(2)  # stepper phase (VIA2 PB0-1), for drive sounds
 
     self.i_clk_1mhz_ph1_en = Signal()
     self.i_clk_1mhz_ph2_en = Signal()
@@ -76,7 +77,7 @@ class My1541(Elaboratable):
         self.i_ce,
         self.i_ss_shift, self.i_ss_si, self.o_ss_so, self.i_ss_capture, self.i_ss_cpu_load, self.o_ss_words, self.o_ss_hash,
         self.o_addr, self.i_rom_data, self.i_ram_data, self.o_ram_data, self.o_ram_we, self.o_track_addr,
-        self.i_track_data, self.i_track_len, self.o_track_no, self.o_led_on, self.o_motor_on, self.i_clk_1mhz_ph1_en,
+        self.i_track_data, self.i_track_len, self.o_track_no, self.o_led_on, self.o_motor_on, self.o_head_phase, self.i_clk_1mhz_ph1_en,
         self.i_clk_1mhz_ph2_en, self.i_iec_atn_in, self.i_iec_data_in, self.o_iec_data_out, self.i_iec_clock_in,
         self.o_iec_clock_out, self.o_debug_6502_valid, self.o_debug_6502_sync, self.o_debug_6502_addr,
         self.o_debug_6502_data, self.o_debug_6502_regs
@@ -230,6 +231,7 @@ class My1541(Elaboratable):
         u_via2.i_pb[7].eq(~block_sync),
         self.o_led_on.eq(led_ctrl),
         self.o_motor_on.eq(motor_ctrl),
+        self.o_head_phase.eq(head_step_dir),
     ]
 
     #

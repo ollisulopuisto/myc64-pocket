@@ -87,6 +87,16 @@
         "filename": "1541-e000.bin",
         "extensions": ["bin"],
         "address": 0
+    },
+    {
+        "name": "Drive Sounds",
+        "id": "205",
+        "required": false,
+        "deferload": true,
+        "parameters": 8,
+        "filename": "snds1541.bin",
+        "extensions": ["bin"],
+        "address": 0
     }
     ]
     }

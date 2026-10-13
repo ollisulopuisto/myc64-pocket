@@ -478,8 +478,15 @@ module core_top (
   reg        audgen_dac;
   reg [31:0] audgen_shift;
   wire audio_mute;  // warp mode: muted while not in real time
-  wire [15:0] sid_audio_l_16 = audio_mute ? 16'h0 : sid_audio_l[17:2];
-  wire [15:0] sid_audio_r_16 = audio_mute ? 16'h0 : (sid_dual_s ? sid_audio_r[17:2] : sid_audio_l[17:2]);
+  wire signed [15:0] sid_l = audio_mute ? 16'h0 : sid_audio_l[17:2];
+  wire signed [15:0] sid_r = audio_mute ? 16'h0 : (sid_dual_s ? sid_audio_r[17:2] : sid_audio_l[17:2]);
+
+  // 1541 drive sounds on both channels, also during warp (u_drive_sound)
+  wire signed [15:0] drive_snd;
+  wire signed [16:0] mix_l = sid_l + drive_snd;
+  wire signed [16:0] mix_r = sid_r + drive_snd;
+  wire [15:0] sid_audio_l_16 = (mix_l[16] != mix_l[15]) ? {mix_l[16], {15{~mix_l[16]}}} : mix_l[15:0];
+  wire [15:0] sid_audio_r_16 = (mix_r[16] != mix_r[15]) ? {mix_r[16], {15{~mix_r[16]}}} : mix_r[15:0];
   always @(negedge audgen_sclk) begin
     audgen_dac <= audgen_shift[31];
     audgen_shift <= {audgen_shift[30:0], 1'b0};
@@ -769,6 +776,7 @@ module core_top (
   wire [6:0] c1541_track_no;
   wire c1541_led_on;
   wire c1541_motor_on;
+  wire [1:0] c1541_head_phase;
 
   my1541_top u_my1541 (
       .rst(ph_synced_rst),
@@ -787,6 +795,7 @@ module core_top (
       .o_track_no(c1541_track_no),
       .o_led_on(c1541_led_on),
       .o_motor_on(c1541_motor_on),
+      .o_head_phase(c1541_head_phase),
       .i_iec_atn_in(iec_atn),
       .i_iec_data_in(iec_data),
       .o_iec_data_out(iec_1541_data_out),
@@ -1214,6 +1223,7 @@ module core_top (
         32'h5000_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid & ext_ram_done;
         32'h51xx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid & clk_8mhz_1mhz_ph1_en;
         32'h5xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
+        32'h6xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h7xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h8xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
         32'h9xxx_xxxx: cpu_mem_ready <= ~cpu_mem_ready & cpu_mem_valid;
@@ -1283,6 +1293,7 @@ module core_top (
   reg       sid_model;    // 0: 6581, 1: 8580
   reg       sid_dual;     // 0: Mono, 1: Dual SID (Stereo)
   reg       warp_mode;    // 0: Off, 1: Auto while the drive motor runs
+  reg [1:0] drive_snd_level; // 0: Off, 1: Low, 2: Medium, 3: High
 
   initial begin
     osd_offset_x <= 1;
@@ -1291,7 +1302,24 @@ module core_top (
     sid_model    <= 0; // Default to 6581
     sid_dual     <= 0; // Default to Mono
     warp_mode    <= 1; // Auto
+    drive_snd_level <= 2; // Medium
   end
+
+  // 1541 drive sounds (mixed into the audio output above)
+  drive_sound u_drive_sound (
+      .clk(clk_32mhz),
+      .motor_on(c1541_motor_on),
+      .disk_in(c1541_track_len != 0),
+      .head_phase(c1541_head_phase),
+      .head_at_stop(c1541_track_no == 0),
+      .level(drive_snd_level),
+      .sample(drive_snd),
+      // Sample file from the BIOS (byte stores to 0x6000_0000)
+      .wr_clk(clk_8mhz),
+      .wr_en(cpu_mem_valid && !cpu_mem_ready && cpu_mem_addr[31:28] == 4'h6 && |cpu_mem_wstrb),
+      .wr_addr({cpu_mem_addr[13:2], cpu_mem_wstrb[3] | cpu_mem_wstrb[2], cpu_mem_wstrb[3] | cpu_mem_wstrb[1]}),
+      .wr_data(cpu_mem_wdata[7:0])
+  );
 
   always @(posedge clk_74a) begin
     // Values written by APF during core boot
@@ -1303,6 +1331,7 @@ module core_top (
         32'hA000_000C: sid_model    <= bridge_wr_data[0];
         32'hA000_0010: sid_dual     <= bridge_wr_data[0];
         32'hA000_0014: warp_mode    <= bridge_wr_data[0];
+        32'hA000_0018: drive_snd_level <= bridge_wr_data[1:0];
       endcase
     end
   end

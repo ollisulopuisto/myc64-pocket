@@ -157,6 +157,34 @@
         ]
       },
       {
+        "name": "Drive sounds",
+        "id": 6,
+        "type": "list",
+        "enabled": true,
+        "address": "0xA0000018",
+        "writeonly": true,
+        "persist": true,
+        "defaultval": 2,
+        "options": [
+          {
+            "value": 0,
+            "name": "Off"
+          },
+          {
+            "value": 1,
+            "name": "Low"
+          },
+          {
+            "value": 2,
+            "name": "Medium"
+          },
+          {
+            "value": 3,
+            "name": "High"
+          }
+        ]
+      },
+      {
         "name": "OSD x-offset",
         "id": 0,
         "type": "slider_u32",

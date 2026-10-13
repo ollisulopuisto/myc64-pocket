@@ -761,6 +761,7 @@ set_global_assignment -name VERILOG_FILE core/spram.v
 set_global_assignment -name VERILOG_FILE core/picorv32.v
 set_global_assignment -name QIP_FILE apf/apf.qip
 set_global_assignment -name VERILOG_FILE core/core_top.v
+set_global_assignment -name VERILOG_FILE core/drive_sound.v
 set_global_assignment -name VERILOG_FILE core/core_bridge_cmd.v
 set_global_assignment -name SDC_FILE core/core_constraints.sdc
 set_global_assignment -name SIGNALTAP_FILE core/stp1.stp

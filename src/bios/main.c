@@ -94,6 +94,11 @@ int main(void) {
   bridge_ds_read(203, 0, 8192, (uint8_t *)0x50040000);
   bridge_ds_read(204, 0, 8192, (uint8_t *)(0x50040000 + 8192));
 
+  // Optional 1541 drive sound samples (Ultimate snds1541.bin layout)
+  uint32_t snd_len = bridge_ds_get_length(205);
+  if (snd_len)
+    bridge_ds_read(205, 0, MIN(snd_len, 16384), (uint8_t *)0x60000000);
+
   *C64_CTRL = bits_set(*C64_CTRL, 1, 2, 2); // Joystick1 = cont2
   *C64_CTRL = bits_set(*C64_CTRL, 3, 2, 1); // Joystick2 = cont1
   *C64_CTRL = bits_set(*C64_CTRL, 0, 1, 1); // Release reset for MyC64
