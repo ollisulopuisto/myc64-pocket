@@ -77,10 +77,21 @@ static void load_crt(uint16_t slot_id, int at_boot) {
 
 // Before BIOS_READY: the ROM must be in place before a state restored on wake
 // runs (the C64 is still in reset, so only the cartridge type is set)
-void crts_boot() { load_crt(CRT_SLOT_ID, 1); }
+static int crt_boot_loaded;
+void crts_boot() {
+  load_crt(CRT_SLOT_ID, 1);
+  crt_boot_loaded = 1;
+}
 
 void crts_irq() {
   if (updated_slots & (1 << CRT_SLOT_ID)) {
+    // Just after a wake the ROM loaded at boot is already in place, and
+    // rewriting it starves the running game of cartridge reads (it crashes)
+    if (crt_boot_loaded && timer_ticks < ss_suppress_until) {
+      crt_boot_loaded = 0;
+      return;
+    }
+    crt_boot_loaded = 0;
     load_crt(CRT_SLOT_ID, 0);
   }
 }
