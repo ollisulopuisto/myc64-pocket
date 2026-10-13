@@ -728,9 +728,14 @@ module core_top (
   reg ss_sid_inject;
   reg [5:0] ss_sid_idx;
   reg [7:0] ss_sid_inject_data;
+  // A load writes the shadow too, or a save made after a load would keep the
+  // registers from before it (e.g. a volume set once at game start: no sound)
   always @(posedge clk_32mhz) begin
-    if (c64_sid_we && sid_chip_cs[0]) ss_sid_regs[{1'b0, c64_sid_addr}] <= c64_sid_data;
-    if (c64_sid_we && sid_chip_cs[1]) ss_sid_regs[{1'b1, c64_sid_addr}] <= c64_sid_data;
+    if (ss_sid_inject) ss_sid_regs[ss_sid_idx] <= ss_sid_inject_data;
+    else begin
+      if (c64_sid_we && sid_chip_cs[0]) ss_sid_regs[{1'b0, c64_sid_addr}] <= c64_sid_data;
+      if (c64_sid_we && sid_chip_cs[1]) ss_sid_regs[{1'b1, c64_sid_addr}] <= c64_sid_data;
+    end
   end
   wire [1:0] sid_chip_mode = { sid_model_s, sid_model_s };
 
