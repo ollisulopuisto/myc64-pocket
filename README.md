@@ -120,9 +120,11 @@ The core features full, native in-core `.d64` support with on-the-fly GCR bitstr
 ## Pocket Controls & In-Game Shortcuts
 
 ### Control Modes (Core Menu)
-* **Standard (D-pad & B)**: Classic joystick where D-pad Up or Face B jumps and Face Y fires (Super Mario World layout: fire left of jump), X is Space, and A is Return.
+Principle: face buttons on their own are joystick only and never type keys, so they can be mashed freely in a game. Keys and typed commands need L or R held (below).
+
+* **Standard (D-pad & B)**: Classic joystick. A, X and Y fire (A is where the Pocket's own accept button is); D-pad Up or B jumps (joystick up).
 * **Platformer (Btn B Jump)**: Pure button jump layout for platformers (*Giana Sisters*, *Turrican*, *Mayhem in Monsterland*). Button B is exclusively Jump (Up), disabling D-pad Up jump.
-* **Driving (L=Brake, R=Gas)**: Dedicated racing layout. Right trigger is Gas (Up), Left trigger is Brake/Reverse (Down).
+* **Driving (L=Brake, R=Gas)**: Dedicated racing layout. Right trigger is Gas (Up), Left trigger is Brake/Reverse (Down); all four face buttons fire.
 
 ### Shortcuts & Port Swap
 * **Hold L + Press Select (Joystick Port 1/2 Swap)**: Swaps joystick ports on the fly with a clear on-screen OSD notification (`[C64 JOYSTICK PORT 1/2 ACTIVE]`).
@@ -138,11 +140,9 @@ The core features full, native in-core `.d64` support with on-the-fly GCR bitstr
   * B: `RUN` + RETURN
   * X: `LIST` + RETURN
   * Y: `LOAD"$",8` + RETURN (disk directory)
-* **Base Face Buttons**:
-  * Button Y: Fire
-  * Button B: Jump (Up)
-  * Button X: `Space`
-  * Button A: `Return`
+* **Base Face Buttons** (no L/R held):
+  * Buttons A, X, Y: Fire
+  * Button B: Jump (Up); fire in Driving mode
 
 ##### Windows
 
@@ -194,10 +194,9 @@ Core menu **Warp (fast load)**: *Auto while loading* (default) or *Off*. In Auto
 The gamepad is mapped to the C64 joystick port as follows
 
 - **dpad** - as expected
-- **face-y** - fire button
+- **face-a, face-x, face-y** - fire button
 - **face-b** - jump (joystick up)
-- **face-x** - Space
-- **face-a** - Return
+- keys (Space, Return, ...) with L held, see above
 
 Pressing **left-of-analogue** brings up (toggles) the on-screen-display
 containing a virtual keyboard and a small menu system for settings.

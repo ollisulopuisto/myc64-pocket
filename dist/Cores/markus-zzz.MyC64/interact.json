@@ -35,11 +35,15 @@
         "options": [
           {
             "value": 0,
-            "name": "Y Fire B Jump"
+            "name": "Left/Right/Top: Fire"
           },
           {
             "value": 1,
-            "name": "X Space A Return"
+            "name": "Bottom: Jump"
+          },
+          {
+            "value": 2,
+            "name": "Keys: hold L or R"
           }
         ],
         "writeonly": true

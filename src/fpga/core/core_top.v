@@ -595,25 +595,31 @@ module core_top (
 
   reg [6:0] joystick1;
 
-  // cont1_key_s bits: 0: Up, 1: Down, 2: Left, 3: Right, 4: Face A, 5: Face B (Jump), 6: Face X, 7: Face Y (Fire), 8: Trig L, 9: Trig R
+  // cont1_key_s bits: 0: Up, 1: Down, 2: Left, 3: Right, 4: Face A (right), 5: Face B (bottom),
+  // 6: Face X (top), 7: Face Y (left), 8: Trig L, 9: Trig R
+  // Face buttons alone never type keys (keys need L or R held, see the BIOS),
+  // so they can be mashed freely. Fire is A, X and Y; B jumps (joystick up).
   // control_mode:
-  //   2'b00: Standard (D-pad Up | Face B)
-  //   2'b01: Platformer (Face B only, D-pad Up disabled)
-  //   2'b10: Driving (Trig R = Up/Gas, Trig L = Down/Brake, D-pad Up/Down disabled)
+  //   2'b00: Standard (Up = D-pad Up | B)
+  //   2'b01: Platformer (Up = B only, D-pad Up disabled)
+  //   2'b10: Driving (Up = Trig R, Down = Trig L, D-pad Up/Down disabled, B fires too)
   wire joy1_up = (control_mode == 2'b10) ? cont1_key_s[9] :
                  (control_mode == 2'b01) ? cont1_key_s[5] :
                  (cont1_key_s[0] | cont1_key_s[5]);
 
   wire joy1_down = (control_mode == 2'b10) ? cont1_key_s[8] : cont1_key_s[1];
+  wire joy1_fire = cont1_key_s[4] | cont1_key_s[6] | cont1_key_s[7] |
+                   ((control_mode == 2'b10) & cont1_key_s[5]);
+  wire joy2_fire = cont2_key_s[4] | cont2_key_s[6] | cont2_key_s[7];
 
   always @* begin
     case (c64_ctrl[2:1])
       2'b01: begin
         // bit 0: Up, bit 1: Down, bit 2: Left, bit 3: Right, bit 4: Fire 1, bits 5-6: POT
-        joystick1 = {2'b00, cont1_key_s[7], cont1_key_s[3:2], joy1_down, joy1_up};
+        joystick1 = {2'b00, joy1_fire, cont1_key_s[3:2], joy1_down, joy1_up};
       end
       2'b10: begin
-        joystick1 = {2'b00, cont2_key_s[7], cont2_key_s[3:1], cont2_key_s[0] | cont2_key_s[5]};
+        joystick1 = {2'b00, joy2_fire, cont2_key_s[3:1], cont2_key_s[0] | cont2_key_s[5]};
       end
       default: begin
         joystick1 = 0;
@@ -626,10 +632,10 @@ module core_top (
   always @* begin
     case (c64_ctrl[4:3])
       2'b01: begin
-        joystick2 = {2'b00, cont1_key_s[7], cont1_key_s[3:2], joy1_down, joy1_up};
+        joystick2 = {2'b00, joy1_fire, cont1_key_s[3:2], joy1_down, joy1_up};
       end
       2'b10: begin
-        joystick2 = {2'b00, cont2_key_s[7], cont2_key_s[3:1], cont2_key_s[0] | cont2_key_s[5]};
+        joystick2 = {2'b00, joy2_fire, cont2_key_s[3:1], cont2_key_s[0] | cont2_key_s[5]};
       end
       default: begin
         joystick2 = 0;

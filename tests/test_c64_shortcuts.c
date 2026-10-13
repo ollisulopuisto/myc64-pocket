@@ -9,17 +9,8 @@ int main() {
     bool suppress = false;
     uint64_t mask = 0;
 
-    printf("Testing C64 unmodified X -> Space, A -> Return, Y/B -> joystick only...\n");
-    mask = pocket_c64_process_shortcuts(1 << 6, &suppress);
-    assert(!suppress);
-    assert(mask == C64_KEYB_MASK_KEY(C64_KEY_SPACE));
-
-    mask = pocket_c64_process_shortcuts(1 << 4, &suppress);
-    assert(!suppress);
-    assert(mask == C64_KEYB_MASK_KEY(C64_KEY_RETURN));
-
-    // Y is fire and B is jump; neither may inject a key
-    mask = pocket_c64_process_shortcuts((1 << 7) | (1 << 5), &suppress);
+    printf("Testing C64 unmodified face buttons -> joystick only, no keys...\n");
+    mask = pocket_c64_process_shortcuts((1 << 4) | (1 << 5) | (1 << 6) | (1 << 7), &suppress);
     assert(!suppress);
     assert(mask == 0);
 
