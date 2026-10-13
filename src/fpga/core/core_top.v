@@ -320,7 +320,7 @@ module core_top (
         bridge_rd_data <= dataslot_table_rd_data;
       end
       32'hBxxxxxxx: begin
-        bridge_rd_data <= ss_bridge_rd_data;
+        bridge_rd_data <= ss_bridge_rd_q;
       end
       default: begin
         bridge_rd_data <= cmd_bridge_rd_data;
@@ -420,6 +420,7 @@ module core_top (
   reg ss_ack_tgl;
   reg [1:0] ss_save_res, ss_load_res;
   wire [31:0] ss_bridge_rd_data;
+  reg [31:0] ss_bridge_rd_q;
   reg ss_glue_load;     // savestate load: restore tk, ph_synced_rst, VIC raster shadow
   reg [31:0] ss_glue;   // {tk, ph_synced_rst, scyc, sy, sx}
   localparam [31:0] SS_SIZE = 32'h0002_0000;
@@ -1702,13 +1703,14 @@ module core_top (
   reg [1:0] ss_rd_region;
   always @(posedge clk_74a)
     ss_rd_region <= bridge_addr[16] ? 2'd3 : (bridge_addr[12] ? (bridge_addr[11] ? 2'd2 : 2'd1) : 2'd0);
-  // Word 0 (the magic) is constant and served without the BRAM: the Pocket
-  // samples the first word of a read burst before a registered read of its
-  // address has completed (saves had 0 there and failed the load check).
-  assign ss_bridge_rd_data = (bridge_addr[16:2] == 15'd0) ? SS_MAGIC :
-                             (ss_rd_region == 2'd3) ? c64_ram_b_dout :
+  assign ss_bridge_rd_data = (ss_rd_region == 2'd3) ? c64_ram_b_dout :
                              (ss_rd_region == 2'd2) ? color_b_dout :
                              (ss_rd_region == 2'd1) ? c1541_ram_b_dout : ss_rb_dout;
+  // Like the template's command registers, read data is latched on
+  // bridge_rd, which comes after the bridge has sampled the word: the Pocket
+  // gets each word one read later and expects exactly that (answering at once
+  // shifted saves by a word).
+  always @(posedge clk_74a) if (bridge_rd) ss_bridge_rd_q <= ss_bridge_rd_data;
 
   // Bridge-domain events toggled into the system domain
   reg ss_last_rd_tgl = 0;  // Pocket read the last word of the blob
@@ -1910,7 +1912,7 @@ module core_top (
             ss_ra_addr <= ss_ra_addr;  // data for ss_k arrives next cycle
           end else begin
             case (ss_k[2:0])
-              3'd0: if (ss_ra_dout != SS_MAGIC && ss_ra_dout != 0) ss_hdr_ok <= 0;  // 0: early saves
+              3'd0: if (ss_ra_dout != SS_MAGIC) ss_hdr_ok <= 0;
               3'd1: if (ss_ra_dout != SS_VERSION) ss_hdr_ok <= 0;
               3'd2: if (ss_ra_dout != ss_c64_hash) ss_hdr_ok <= 0;
               3'd3: if (ss_ra_dout != ss_1541_hash) ss_hdr_ok <= 0;
