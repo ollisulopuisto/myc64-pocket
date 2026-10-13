@@ -712,6 +712,7 @@ module core_top (
       .o_cart_we(c64_cart_we),
       .i_cart_data(c64_cart_idata),
       .o_cart_data(c64_cart_odata),
+      .o_cart_ram(c64_cart_ram),
       // Debug signals
       .o_debug_6510_valid(debug_c64_cpu_valid),
       .o_debug_6510_sync(debug_c64_cpu_sync),
@@ -941,6 +942,41 @@ module core_top (
   wire [7:0] c64_cart_idata;
   wire [7:0] c64_cart_odata;
   wire c64_cart_we;
+  wire c64_cart_ram;  // c64_cart_addr[14:0] is cartridge RAM, not ROM
+
+  // Cartridge RAM (Action Replay 8 KB, Retro Replay 32 KB, EasyFlash 256 B)
+  // as byte lanes like main RAM: port B is the savestate window at
+  // 0xB000_8000, so the RAM survives sleep (PSRAM does not).
+  reg [1:0] cart_ram_lane_q;
+  reg cart_ram_q;
+  always @(posedge clk_32mhz) begin
+    cart_ram_lane_q <= c64_cart_addr[1:0];
+    cart_ram_q <= c64_cart_ram;
+  end
+  wire [31:0] cart_ram_a_dout, cart_ram_b_dout;
+  wire ss_cart_bridge_wr = bridge_wr && (bridge_addr[31:15] == 17'h16001);  // 0xB000_8000
+  genvar ci;
+  generate
+    for (ci = 0; ci < 4; ci = ci + 1) begin : cart_ram_lane
+      bram_block_dp #(
+          .DATA(8),
+          .ADDR(13)
+      ) u_lane (
+          .a_clk (clk_32mhz),
+          .a_wr  (c64_cart_we && c64_cart_ram && ~ss_pause && (c64_cart_addr[1:0] == ci)),
+          .a_addr(c64_cart_addr[14:2]),
+          .a_din (c64_cart_odata),
+          .a_dout(cart_ram_a_dout[ci*8+7:ci*8]),
+          .b_clk (clk_74a),
+          .b_wr  (ss_cart_bridge_wr),
+          .b_addr(bridge_addr[14:2]),
+          .b_din (bridge_wr_data[31-ci*8:24-ci*8]),
+          .b_dout(cart_ram_b_dout[31-ci*8:24-ci*8])
+      );
+    end
+  endgenerate
+  wire [7:0] psram_cart_data;
+  assign c64_cart_idata = cart_ram_q ? cart_ram_a_dout[cart_ram_lane_q*8+:8] : psram_cart_data;
 `ifdef __VERILATOR__XXX
   spram #(
       .aw(21),
@@ -951,7 +987,7 @@ module core_top (
       .ce  (1'b1),
       .oe  (1'b1),
       .addr(ext_rom_cart_we ? ext_addr : c64_cart_addr),
-      .do  (c64_cart_idata),
+      .do  (psram_cart_data),
       .di  (ext_rom_cart_we ? ext_data : c64_cart_odata),
       .we  (ext_rom_cart_we | c64_cart_we)
   );
@@ -972,7 +1008,7 @@ module core_top (
   // phases of the C64 core. Since clk_8mhz and clk_32mhz are 'related
   // clocks' the tools should take care of the rest (I hope).
   wire psram_wen;
-  assign psram_wen = clk_32mhz_1mhz_ph12_en & (ext_rom_cart_we | (c64_cart_we & ~ss_pause));
+  assign psram_wen = clk_32mhz_1mhz_ph12_en & (ext_rom_cart_we | (c64_cart_we & ~c64_cart_ram & ~ss_pause));
   wire psram_ren;
   assign psram_ren = clk_32mhz_1mhz_ph12_en & ~(ext_rom_cart_we | c64_cart_we);
 
@@ -989,7 +1025,7 @@ module core_top (
 
     .read_en(psram_ren),
     .read_avail(),
-    .data_out(c64_cart_idata),
+    .data_out(psram_cart_data),
 
     .busy(),
 
@@ -1684,6 +1720,7 @@ module core_top (
   //                  256..319  SID registers, one byte per word
   //   0xB000_1000  1541 RAM, 2 KB
   //   0xB000_1800  color RAM, 1 KB (low nibbles)
+  //   0xB000_8000  cartridge RAM, 32 KB
   //   0xB001_0000  C64 RAM, 64 KB
   // Memories are live dual-port views; the system is paused (sys_ce = 0)
   // while they are read or written. Save: pause, capture the T65s, rotate the
@@ -1692,7 +1729,7 @@ module core_top (
   // 0x00A4 start checks the header, shifts the chains back in, loads the T65s,
   // restores glue and SID, and resumes. Video relocks like after warp.
   //
-  // Not saved yet: cartridge RAM in PSRAM (Action/Retro Replay), SID internals
+  // Not saved yet: cartridge ROM/flash contents (reloaded from the CRT), SID internals
   // (oscillators and envelopes restart from the registers), BIOS state.
   //
   localparam [31:0] SS_MAGIC = 32'h4336_3453;  // "C64S"
@@ -1724,10 +1761,12 @@ module core_top (
   );
 
   // Bridge read mux (region select registered like the BRAM outputs)
-  reg [1:0] ss_rd_region;
+  reg [2:0] ss_rd_region;
   always @(posedge clk_74a)
-    ss_rd_region <= bridge_addr[16] ? 2'd3 : (bridge_addr[12] ? (bridge_addr[11] ? 2'd2 : 2'd1) : 2'd0);
-  assign ss_bridge_rd_data = (ss_rd_region == 2'd3) ? c64_ram_b_dout :
+    ss_rd_region <= bridge_addr[16] ? 3'd3 : bridge_addr[15] ? 3'd4 :
+                    (bridge_addr[12] ? (bridge_addr[11] ? 3'd2 : 3'd1) : 3'd0);
+  assign ss_bridge_rd_data = (ss_rd_region == 3'd4) ? cart_ram_b_dout :
+                             (ss_rd_region == 2'd3) ? c64_ram_b_dout :
                              (ss_rd_region == 2'd2) ? color_b_dout :
                              (ss_rd_region == 2'd1) ? c1541_ram_b_dout : ss_rb_dout;
   // Like the template's command registers, read data is latched on

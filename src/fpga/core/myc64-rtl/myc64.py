@@ -46,6 +46,7 @@ class Cartridge(Elaboratable):
     self.o_mem_we = Signal()
     self.o_mem_data = Signal(8)
     self.i_mem_data = Signal(8)
+    self.o_mem_ram = Signal()  # o_mem_addr[0:15] is cartridge RAM (core_top BRAM, in savestates)
 
     self.i_freeze = Signal()  # freeze button (level)
     self.o_io1_drive = Signal()  # cartridge answers reads in IO1 ($DExx)
@@ -62,7 +63,7 @@ class Cartridge(Elaboratable):
     freeze_rise = self.i_freeze & ~freeze_p
 
     m.d.comb += [self.o_exrom.eq(1), self.o_game.eq(1)]
-    m.d.comb += [self.o_mem_we.eq(0)]
+    m.d.comb += [self.o_mem_we.eq(0), self.o_mem_ram.eq(0)]
     m.d.comb += [self.o_data.eq(self.i_mem_data), self.o_mem_data.eq(self.i_data)]
     m.d.comb += [self.o_io1_drive.eq(0), self.o_nmi.eq(0), self.o_active.eq(self.i_cart_type != 0)]
 
@@ -98,7 +99,8 @@ class Cartridge(Elaboratable):
 
         m.d.comb += self.o_mem_addr.eq(Cat(self.i_addr[0:13], reg_de00[0:6], self.i_romh))
         with m.If(self.i_io2):
-          m.d.comb += [self.o_mem_addr.eq(0x100000 + self.i_addr[0:8]), self.o_mem_we.eq(self.i_we)]
+          m.d.comb += [self.o_mem_addr.eq(0x100000 + self.i_addr[0:8]), self.o_mem_we.eq(self.i_we),
+                       self.o_mem_ram.eq(1)]
 
       with m.Case(3): # Action Replay
         with m.If(~reg_de00[2]):
@@ -108,9 +110,11 @@ class Cartridge(Elaboratable):
         m.d.comb += self.o_mem_addr.eq(Cat(self.i_addr[0:13], reg_de00[3:5]))
 
         with m.If(reg_de00[5] & self.i_roml):
-          m.d.comb += [self.o_mem_addr.eq(0x10000 + self.i_addr[0:13]), self.o_mem_we.eq(self.i_we)]
+          m.d.comb += [self.o_mem_addr.eq(0x10000 + self.i_addr[0:13]), self.o_mem_we.eq(self.i_we),
+                       self.o_mem_ram.eq(1)]
         with m.If(self.i_io2): #reg_de00[5] &
-          m.d.comb += [self.o_mem_addr.eq(0x11f00 + self.i_addr[0:8]), self.o_mem_we.eq(self.i_we)]
+          m.d.comb += [self.o_mem_addr.eq(0x11f00 + self.i_addr[0:8]), self.o_mem_we.eq(self.i_we),
+                       self.o_mem_ram.eq(1)]
 
         # Freeze: NMI while the button is held, Ultimax mode with ROM bank 0
         m.d.comb += self.o_nmi.eq(self.i_freeze)
@@ -134,10 +138,10 @@ class Cartridge(Elaboratable):
         with m.If(self.i_roml):
           with m.If(rr_export_ram):
             m.d.comb += [self.o_mem_addr.eq(0x10000 + Cat(self.i_addr[0:13], rr_bank[0:2])),
-                         self.o_mem_we.eq(self.i_we & ultimax)]
+                         self.o_mem_we.eq(self.i_we & ultimax), self.o_mem_ram.eq(1)]
         # ROMH: with RAM selected and AllowBank clear, bank bits 0-1 are ignored
         with m.If(self.i_romh & rr_export_ram & ~rr_allow_bank):
-          m.d.comb += self.o_mem_addr.eq(Cat(self.i_addr[0:13], C(0, 2), rr_bank[2]))
+          m.d.comb += [self.o_mem_addr.eq(Cat(self.i_addr[0:13], C(0, 2), rr_bank[2])), self.o_mem_ram.eq(0)]
 
         # IO2 ($DFxx; $DExx with the REU compatible map): last page of the bank
         io_ram = Signal()
@@ -148,9 +152,9 @@ class Cartridge(Elaboratable):
         with m.If(io_sel):
           with m.If(io_ram):
             m.d.comb += [self.o_mem_addr.eq(0x10000 + Cat(io_page[0:13], ram_bank)),
-                         self.o_mem_we.eq(self.i_we)]
+                         self.o_mem_we.eq(self.i_we), self.o_mem_ram.eq(1)]
           with m.Else():
-            m.d.comb += self.o_mem_addr.eq(Cat(io_page[0:13], rr_bank))
+            m.d.comb += [self.o_mem_addr.eq(Cat(io_page[0:13], rr_bank)), self.o_mem_ram.eq(0)]
           with m.If(rr_reu_map & rr_active & ~rr_frozen & (io_ram | ~(ultimax | game16k))):
             m.d.comb += self.o_io1_drive.eq(1)
 
@@ -229,6 +233,7 @@ class MyC64(Elaboratable):
     self.o_cart_we = Signal()
     self.i_cart_data = Signal(8)
     self.o_cart_data = Signal(8)
+    self.o_cart_ram = Signal()
 
     self.o_debug_6510_valid = Signal()
     self.o_debug_6510_sync = Signal()
@@ -260,7 +265,7 @@ class MyC64(Elaboratable):
         self.o_bus_addr, self.i_rom_char_data, self.i_rom_basic_data, self.i_rom_kernal_data,
         self.i_ram_main_data, self.o_ram_main_data, self.o_ram_main_we,
         self.o_iec_atn_out, self.i_iec_data_in , self.o_iec_data_out, self.i_iec_clock_in, self.o_iec_clock_out,
-        self.i_cart_type, self.i_freeze, self.o_cart_active, self.i_color_data, self.o_color_data, self.o_color_we, self.o_cart_addr, self.o_cart_we, self.i_cart_data, self.o_cart_data,
+        self.i_cart_type, self.i_freeze, self.o_cart_active, self.i_color_data, self.o_color_data, self.o_color_we, self.o_cart_addr, self.o_cart_we, self.i_cart_data, self.o_cart_data, self.o_cart_ram,
         self.o_debug_6510_valid, self.o_debug_6510_sync, self.o_debug_6510_addr, self.o_debug_6510_data, self.o_debug_6510_regs
     ]
 
@@ -331,6 +336,7 @@ class MyC64(Elaboratable):
         u_cart.i_mem_data.eq(self.i_cart_data),
         self.o_cart_data.eq(u_cart.o_mem_data),
         self.o_cart_we.eq(u_cart.o_mem_we),
+        self.o_cart_ram.eq(u_cart.o_mem_ram),
     ]
 
     m.d.comb += [
