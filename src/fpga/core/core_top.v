@@ -1673,7 +1673,11 @@ module core_top (
   reg [1:0] ss_rd_region;
   always @(posedge clk_74a)
     ss_rd_region <= bridge_addr[16] ? 2'd3 : (bridge_addr[12] ? (bridge_addr[11] ? 2'd2 : 2'd1) : 2'd0);
-  assign ss_bridge_rd_data = (ss_rd_region == 2'd3) ? c64_ram_b_dout :
+  // Word 0 (the magic) is constant and served without the BRAM: the Pocket
+  // samples the first word of a read burst before a registered read of its
+  // address has completed (saves had 0 there and failed the load check).
+  assign ss_bridge_rd_data = (bridge_addr[16:2] == 15'd0) ? SS_MAGIC :
+                             (ss_rd_region == 2'd3) ? c64_ram_b_dout :
                              (ss_rd_region == 2'd2) ? color_b_dout :
                              (ss_rd_region == 2'd1) ? c1541_ram_b_dout : ss_rb_dout;
 
@@ -1877,7 +1881,7 @@ module core_top (
             ss_ra_addr <= ss_ra_addr;  // data for ss_k arrives next cycle
           end else begin
             case (ss_k[2:0])
-              3'd0: if (ss_ra_dout != SS_MAGIC) ss_hdr_ok <= 0;
+              3'd0: if (ss_ra_dout != SS_MAGIC && ss_ra_dout != 0) ss_hdr_ok <= 0;  // 0: early saves
               3'd1: if (ss_ra_dout != SS_VERSION) ss_hdr_ok <= 0;
               3'd2: if (ss_ra_dout != ss_c64_hash) ss_hdr_ok <= 0;
               3'd3: if (ss_ra_dout != ss_1541_hash) ss_hdr_ok <= 0;
