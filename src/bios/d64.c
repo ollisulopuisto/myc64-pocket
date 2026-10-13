@@ -210,7 +210,7 @@ void load_d64() {
   d64_loaded = 1;
   // With a cartridge plugged in (e.g. Retro Replay) just insert the disk:
   // autoboot resets without the cartridge and types into its menu.
-  if (bits_get(*C64_CTRL, 5, 3) == 0)
+  if (bits_get(*C64_CTRL, 5, 3) == 0 && timer_ticks >= ss_suppress_until)
     d64_autoboot_trigger();
 }
 
@@ -285,6 +285,16 @@ void c64_type_command(c64_command_t cmd) {
     type_start(TYPE_SEQ(type_dir));
     break;
   }
+}
+
+uint32_t ss_suppress_until;
+
+void savestate_loaded(void) {
+  autoboot_state = 0;
+  c64_isr_keyb_mask = 0;
+  prgs_cancel();
+  ss_suppress_until = timer_ticks + 500; // ~5 s
+  status_notify("STATE RESTORED");
 }
 
 void d64_autoboot_trigger(void) {

@@ -60,6 +60,8 @@
 #define C1541_TRACK_LEN ((volatile uint32_t *)0x30000104)
 // {valid, track_no}: tells warp mode the requested track is in track RAM
 #define C1541_TRACK_ACK ((volatile uint32_t *)0x30000108)
+#define SS_LOAD_CNT ((volatile uint32_t *)0x30000114) // completed savestate loads
+#define BIOS_READY ((volatile uint32_t *)0x30000118)  // ROMs loaded, C64 out of reset
 #define C1541_STATUS_WARP (1 << 9)
 
 #define TARGET_0 ((volatile uint32_t *)0x40000000)
@@ -155,6 +157,14 @@ void load_d64();
 void d64_irq();
 void d64_draw_status_bar();
 void d64_autoboot_trigger();
+
+// After a savestate load (also on wake from sleep, when the Pocket reloads the
+// data slots around the load) slot updates only insert media for a while:
+// no reset, autoboot or typing that would undo the restored state.
+extern uint32_t ss_suppress_until;
+void savestate_loaded(void);
+void prgs_cancel(void);
+void status_notify(const char *msg);
 typedef enum { C64_CMD_LOAD, C64_CMD_RUN, C64_CMD_LIST, C64_CMD_DIR } c64_command_t;
 void c64_type_command(c64_command_t cmd);
 extern volatile uint8_t d64_loaded;

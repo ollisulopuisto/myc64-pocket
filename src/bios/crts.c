@@ -69,7 +69,10 @@ static void load_crt(uint16_t slot_id) {
     chip_packet_base += chip_packet_length;
   }
 
-  misc_reset_core(crt_type); // Reset C64 and 1541
+  if (timer_ticks < ss_suppress_until)
+    *C64_CTRL = bits_set(*C64_CTRL, 5, 3, crt_type); // restored state: no reset
+  else
+    misc_reset_core(crt_type); // Reset C64 and 1541
 }
 
 void crts_irq() {
