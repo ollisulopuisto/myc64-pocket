@@ -419,6 +419,8 @@ module core_top (
   wire ss_req_tgl, ss_req_op;
   reg ss_ack_tgl;
   reg [1:0] ss_save_res, ss_load_res;
+  reg [7:0] ss_load_cnt;  // completed loads, read by the BIOS (0x3000_0114)
+  reg ss_wait_bios;       // loaded, paused until the BIOS is ready
   wire [31:0] ss_bridge_rd_data;
   reg [31:0] ss_bridge_rd_q;
   reg ss_glue_load;     // savestate load: restore tk, ph_synced_rst, VIC raster shadow
@@ -1147,6 +1149,7 @@ module core_top (
       32'h2000_002c: cpu_mem_rdata = cont4_trig_s;
       32'h3000_000c: cpu_mem_rdata = c64_ctrl;
       32'h3000_0100: cpu_mem_rdata = {warp_active, c1541_motor_on, c1541_led_on, c1541_track_no};
+      32'h3000_0114: cpu_mem_rdata = {24'd0, ss_load_cnt};  // completed state loads
       32'h4xxx_xxxx: cpu_mem_rdata = bridge_rdata;
       32'h7xxx_xxxx: cpu_mem_rdata = bridge_dpram_rdata;
       32'h8xxx_xxxx: cpu_mem_rdata = c1541_track_ram_rdata;
@@ -1190,6 +1193,15 @@ module core_top (
       $display("track_len: %d, track_no: %d", c1541_track_len, c1541_track_no);
     end
   end
+
+  // Set by the BIOS once the ROMs are loaded and the C64 is out of reset. On
+  // wake from sleep the Pocket can restore a state before that; it then stays
+  // paused until this is set (it would otherwise run without ROMs, or be reset).
+  reg bios_ready;
+  always @(posedge clk_8mhz)
+    if (rst) bios_ready <= 0;
+    else if (cpu_mem_addr == 32'h30000118 && cpu_mem_valid && cpu_mem_wstrb == 4'b1111)
+      bios_ready <= cpu_mem_wdata[0];
 
   reg [63:0] keyboard_mask;
   always @(posedge clk_8mhz) begin
@@ -1760,6 +1772,9 @@ module core_top (
     endcase
   end
 
+  wire bios_ready_s;
+  synch_3 s_bios_ready (bios_ready, bios_ready_s, clk_32mhz);
+
   always @(posedge clk_32mhz) begin
     ss_glue_load <= 0;
     ss_sid_inject <= 0;
@@ -1779,8 +1794,15 @@ module core_top (
       ss_k <= 0;
       ss_rd_phase <= 0;
       ss_ra_addr <= 0;
+      ss_load_cnt <= 0;
+      ss_wait_bios <= 0;
     end else begin
       ss_tmr <= (ss_hold_read || ss_hold_load) ? ss_tmr + 1'b1 : 27'd0;
+
+      if (ss_wait_bios && bios_ready_s) begin
+        ss_wait_bios <= 0;
+        ss_pause <= 0;
+      end
 
       // A write into the window: a load is coming, stop the system
       if (ss_wr_seen_s != ss_wr_seen) begin
@@ -1958,7 +1980,9 @@ module core_top (
         SS_LD_DONE: begin
           ss_load_res <= 2'd2;
           ss_ack_tgl <= ss_req_seen;
-          ss_pause <= 0;
+          ss_load_cnt <= ss_load_cnt + 1'b1;
+          ss_pause <= !bios_ready_s;
+          ss_wait_bios <= !bios_ready_s;
           ss_state <= SS_IDLE;
         end
         default: ss_state <= SS_IDLE;

@@ -70,7 +70,17 @@ static uint8_t joy_notify_port = 0;
 
 volatile uint8_t osd_dirty = 1;
 
+static const char *notify_msg;
+
+void status_notify(const char *msg) {
+  notify_msg = msg;
+  joy_notify_timeout = timer_ticks + 250;
+  osd_mode = OSD_STATUS_BAR;
+  osd_dirty = 1;
+}
+
 void joy_swap_notify(uint8_t port) {
+  notify_msg = 0;
   joy_notify_port = port;
   joy_notify_timeout = timer_ticks + 250; // show message for ~2.5 seconds
   osd_mode = OSD_STATUS_BAR;
@@ -97,6 +107,7 @@ int main(void) {
   *C64_CTRL = bits_set(*C64_CTRL, 1, 2, 2); // Joystick1 = cont2
   *C64_CTRL = bits_set(*C64_CTRL, 3, 2, 1); // Joystick2 = cont1
   *C64_CTRL = bits_set(*C64_CTRL, 0, 1, 1); // Release reset for MyC64
+  *BIOS_READY = 1; // a savestate restored before this point may now run
 
   cont1_key_p = 0;
   cont1_key = 0;
@@ -144,7 +155,10 @@ int main(void) {
       if (osd_dirty) {
         osd_dirty = 0;
         if (timer_ticks < joy_notify_timeout) {
-          osd_printf(0, 0, "[C64 JOYSTICK PORT %d ACTIVE] ", joy_notify_port);
+          if (notify_msg)
+            osd_printf(0, 0, "[%s]          ", notify_msg);
+          else
+            osd_printf(0, 0, "[C64 JOYSTICK PORT %d ACTIVE] ", joy_notify_port);
         } else if (d64_loaded) {
           d64_draw_status_bar();
         } else {
@@ -168,6 +182,15 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   timer_ticks++;
 
   updated_slots = *UPDATED_SLOTS;
+
+  // A savestate was loaded: before the slot handlers, so updates in the same
+  // tick are already treated as plain inserts
+  static uint8_t ss_load_seen;
+  uint8_t ss_load_cnt = *SS_LOAD_CNT;
+  if (ss_load_cnt != ss_load_seen) {
+    ss_load_seen = ss_load_cnt;
+    savestate_loaded();
+  }
 
   prgs_irq();
   crts_irq();
