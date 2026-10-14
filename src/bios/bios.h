@@ -62,6 +62,7 @@
 #define C1541_TRACK_ACK ((volatile uint32_t *)0x30000108)
 #define SS_LOAD_CNT ((volatile uint32_t *)0x30000114) // completed savestate loads
 #define BIOS_READY ((volatile uint32_t *)0x30000118)  // ROMs loaded, C64 out of reset
+#define MEM_WIPE ((volatile uint32_t *)0x3000011c)    // write: clear C64/1541/cart RAM; read: busy
 #define C1541_STATUS_WARP (1 << 9)
 
 #define TARGET_0 ((volatile uint32_t *)0x40000000)

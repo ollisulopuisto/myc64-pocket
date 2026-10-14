@@ -858,6 +858,26 @@ module core_top (
   end
 
 
+  // Power-on clear: the BIOS starts it (0x3000_011C) with the C64 and 1541
+  // held in reset before a new program runs, so nothing of the previous one
+  // survives. 16K clk_32mhz cycles write every word of main RAM (power-on
+  // pattern: 64 bytes $00, 64 bytes $FF), colour, 1541 and cartridge RAM.
+  reg wipe_tgl = 0;  // flipped by the BIOS write, see below
+  reg wipe_seen = 0;
+  reg wipe_on = 0;
+  reg [13:0] wipe_cnt;
+  always @(posedge clk_32mhz) begin
+    if (wipe_tgl != wipe_seen) begin
+      wipe_seen <= wipe_tgl;
+      wipe_on <= 1;
+      wipe_cnt <= 0;
+    end else if (wipe_on) begin
+      wipe_cnt <= wipe_cnt + 1'd1;
+      if (&wipe_cnt) wipe_on <= 0;
+    end
+  end
+  wire wipe_busy = wipe_on | (wipe_tgl != wipe_seen);
+
   //
   // Memories for MyC64
   //
@@ -880,9 +900,9 @@ module core_top (
           .ADDR(14)
       ) u_lane (
           .a_clk (clk_32mhz),
-          .a_wr  (c64_ram_wr && (c64_ram_addr[1:0] == ri)),
-          .a_addr(c64_ram_addr[15:2]),
-          .a_din (c64_ram_din),
+          .a_wr  (wipe_on | (c64_ram_wr && (c64_ram_addr[1:0] == ri))),
+          .a_addr(wipe_on ? wipe_cnt : c64_ram_addr[15:2]),
+          .a_din (wipe_on ? {8{wipe_cnt[4]}} : c64_ram_din),
           .a_dout(c64_ram_a_dout[ri*8+7:ri*8]),
 
           // Bridge word = 4 consecutive bytes, first byte in bits 31:24
@@ -966,9 +986,9 @@ module core_top (
           .ADDR(13)
       ) u_lane (
           .a_clk (clk_32mhz),
-          .a_wr  (c64_cart_we && c64_cart_ram && ~ss_pause && (c64_cart_addr[1:0] == ci)),
-          .a_addr(c64_cart_addr[14:2]),
-          .a_din (c64_cart_odata),
+          .a_wr  (wipe_on | (c64_cart_we && c64_cart_ram && ~ss_pause && (c64_cart_addr[1:0] == ci))),
+          .a_addr(wipe_on ? wipe_cnt[12:0] : c64_cart_addr[14:2]),
+          .a_din (wipe_on ? 8'h00 : c64_cart_odata),
           .a_dout(cart_ram_a_dout[ci*8+7:ci*8]),
           .b_clk (clk_74a),
           .b_wr  (ss_cart_bridge_wr),
@@ -1073,9 +1093,9 @@ module core_top (
           .ADDR(9)
       ) u_c1541_lane (
           .a_clk (clk_32mhz),
-          .a_wr  (c1541_ram_we && ~ss_pause && (c1541_bus_addr[1:0] == li)),
-          .a_addr(c1541_bus_addr[10:2]),
-          .a_din (c1541_ram_wdata),
+          .a_wr  (wipe_on | (c1541_ram_we && ~ss_pause && (c1541_bus_addr[1:0] == li))),
+          .a_addr(wipe_on ? wipe_cnt[8:0] : c1541_bus_addr[10:2]),
+          .a_din (wipe_on ? 8'h00 : c1541_ram_wdata),
           .a_dout(c1541_ram_a_dout[li*8+7:li*8]),
           .b_clk (clk_74a),
           .b_wr  (ss_1541_bridge_wr),
@@ -1088,9 +1108,9 @@ module core_top (
           .ADDR(8)
       ) u_color_lane (
           .a_clk (clk_32mhz),
-          .a_wr  (c64_color_we && ~ss_pause && (c64_bus_addr[1:0] == li)),
-          .a_addr(c64_bus_addr[9:2]),
-          .a_din (c64_color_wdata),
+          .a_wr  (wipe_on | (c64_color_we && ~ss_pause && (c64_bus_addr[1:0] == li))),
+          .a_addr(wipe_on ? wipe_cnt[7:0] : c64_bus_addr[9:2]),
+          .a_din (wipe_on ? 4'h0 : c64_color_wdata),
           .a_dout(color_a_dout[li*4+3:li*4]),
           .b_clk (clk_74a),
           .b_wr  (ss_color_bridge_wr),
@@ -1205,6 +1225,7 @@ module core_top (
       32'h3000_0100: cpu_mem_rdata = {warp_active, c1541_motor_on, c1541_led_on, c1541_track_no};
       32'h3000_0110: cpu_mem_rdata = {30'd0, control_mode};  // menu setting, static
       32'h3000_0114: cpu_mem_rdata = {24'd0, ss_load_cnt};  // completed state loads
+      32'h3000_011c: cpu_mem_rdata = {31'd0, wipe_busy};
       32'h4xxx_xxxx: cpu_mem_rdata = bridge_rdata;
       32'h7xxx_xxxx: cpu_mem_rdata = bridge_dpram_rdata;
       32'h8xxx_xxxx: cpu_mem_rdata = c1541_track_ram_rdata;
@@ -1252,6 +1273,10 @@ module core_top (
   // Set by the BIOS once the ROMs are loaded and the C64 is out of reset. On
   // wake from sleep the Pocket can restore a state before that; it then stays
   // paused until this is set (it would otherwise run without ROMs, or be reset).
+  always @(posedge clk_8mhz)
+    if (cpu_mem_addr == 32'h3000011c && cpu_mem_valid && !cpu_mem_ready && cpu_mem_wstrb == 4'b1111)
+      wipe_tgl <= ~wipe_tgl;
+
   reg bios_ready;
   always @(posedge clk_8mhz)
     if (rst) bios_ready <= 0;

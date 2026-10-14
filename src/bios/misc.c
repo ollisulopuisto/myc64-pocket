@@ -26,14 +26,13 @@ uint8_t joystick1;
 uint8_t joystick2;
 
 void misc_reset_core(uint8_t cart_type) {
-  // Clear any "CBM80" cartridge auto start signature at $8000
-  // XXX: Note that we currently cannot do that during reset since we depend on
-  // the 1MHz phase enable signals during C64 RAM access.
-  volatile uint8_t *C64_RAM = (volatile uint8_t *)0x50000000;
-  for (unsigned i = 0; i < 16; i++) {
-    C64_RAM[0x8000 + i] = 0;
-  }
+  // Like a power cycle: hold the C64 and 1541 in reset and clear all their
+  // RAM (main, colour, drive, cartridge), so nothing of the previous program
+  // survives. The clear takes 0.5 ms. Also called from the IRQ handler.
   *C64_CTRL = bits_set(*C64_CTRL, 0, 1, 0);         // Assert reset for MyC64
+  *MEM_WIPE = 1;
+  while (*MEM_WIPE & 1)
+    ;
   *C64_CTRL = bits_set(*C64_CTRL, 5, 3, cart_type); // Set cartridge type
   *C64_CTRL = bits_set(*C64_CTRL, 0, 1, 1);         // Release reset for MyC64
 }
