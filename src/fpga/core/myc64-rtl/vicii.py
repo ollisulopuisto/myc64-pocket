@@ -38,6 +38,7 @@ class VicII(Elaboratable):
     self.i_reg_data = Signal(8)
     self.o_reg_data = Signal(8)
     self.o_steal_bus = Signal()
+    self.o_ba = Signal()  # Bus available (active high); low = the CPU must stop at its next read
     self.o_irq = Signal()
     self.o_color = Signal(4)
     self.o_hsync = Signal()
@@ -46,7 +47,7 @@ class VicII(Elaboratable):
 
     self.ports = [
         self.clk_8mhz_en, self.clk_1mhz_ph1_en, self.clk_1mhz_ph2_en, self.o_addr, self.i_data, self.i_reg_addr,
-        self.i_reg_cs, self.i_reg_we, self.i_reg_data, self.o_reg_data, self.o_steal_bus, self.o_irq, self.o_color,
+        self.i_reg_cs, self.i_reg_we, self.i_reg_data, self.o_reg_data, self.o_steal_bus, self.o_ba, self.o_irq, self.o_color,
         self.o_hsync, self.o_vsync
     ]
 
@@ -396,6 +397,40 @@ class VicII(Elaboratable):
 
     m.d.comb += [vic_owns_ph1.eq(0)]
 
+    # Sprite DMA switch-on. On the real VIC-II this check is made in the first
+    # phase of cycle 55 (and 56); doing it here (VIC half of core cycle 55)
+    # rather than at the p-access in cycle 58 lets BA below go low three
+    # cycles before sprite 0's first s-access. mc/hdouble are not used until
+    # the s-accesses, so moving the check has no other effect.
+    with m.If(self.clk_1mhz_ph2_en & (cycle == 55)):
+      for idx in range(8):
+        with m.If(r_d015[idx] & (sprites_y[idx] == raster)):
+          m.d.sync += [sprite_dma_on[idx].eq(1), mc[idx].eq(0), sprite_hdouble_toggle[idx].eq(0)]
+
+    #
+    # BA (bus available), combinational from the cycle counter, the bad line
+    # condition and the sprite DMA flags (no new state, so the savestate
+    # chain is unchanged).
+    #
+    # Core cycle numbering: core cycle k is the CPU half [ph1_en, ph2_en)
+    # followed by the VIC half [ph2_en, ph1_en). The CPU half of core cycle k
+    # is the second phase of real (C64 article) cycle k-1, the VIC half is the
+    # first phase of real cycle k. BA here is the value for the CPU half of
+    # core cycle 'cycle'; it is still valid at the ph1_en edge that ends that
+    # half, which is where the 6510 samples it (T65 Rdy).
+    #
+    # Real PAL 6569: bad line c-accesses in cycles 15-54 -> BA low 12-54
+    # (core 13-55). Sprite n's s-accesses take the CPU phase in real cycles
+    # 58+2n and 59+2n (mod 63) -> BA low from 3 cycles earlier, real
+    # 55+2n..59+2n (core 56+2n..60+2n, wrapping 63 -> 1).
+    ba_low = Signal()
+    ba_terms = [bad_line_cond & (cycle >= 13) & (cycle <= 55)]
+    for idx in range(8):
+      cycs = [((56 + 2 * idx + k - 1) % 63) + 1 for k in range(5)]
+      ba_terms.append(sprite_dma_on[idx] & Cat(*[cycle == c for c in cycs]).any())
+    m.d.comb += ba_low.eq(Cat(*ba_terms).any())
+    m.d.comb += self.o_ba.eq(~ba_low)
+
     #
     # Sequencer.
     #
@@ -409,11 +444,6 @@ class VicII(Elaboratable):
           with m.If(cycle == 58):
             # Disable all sprite shifters.
             m.d.sync += [sprite_shift_on.eq(0)]
-            # In parallel; activate the sprite DMA if sprite enabled ($d015)
-            # and Y-coordinate matches.
-            for idx in range(8):
-              with m.If(r_d015[idx] & (sprites_y[idx] == raster)):
-                m.d.sync += [sprite_dma_on[idx].eq(1), mc[idx].eq(0), sprite_hdouble_toggle[idx].eq(0)]
             m.next = 'p-access'
 
       with m.State('p-access'):
