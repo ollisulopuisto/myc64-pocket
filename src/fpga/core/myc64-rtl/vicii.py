@@ -529,11 +529,9 @@ class VicII(Elaboratable):
           with m.Else():
             m.d.comb += [self.o_addr.eq(Cat(rc[0:3], vml[vmli][0:8], r_d018[1:4]))]
         with m.If(self.clk_1mhz_ph1_en):
-          m.d.sync += [pixshift_staging.eq(self.i_data[0:8])]
           with m.If(display_not_idle_state):
+            m.d.sync += [pixshift_staging.eq(self.i_data[0:8])]
             m.d.sync += fgcolor_staging.eq(vml[vmli])
-          with m.Else():
-            m.d.sync += fgcolor_staging.eq(0)
           m.d.sync += [vc.eq(vc + 1)]
           with m.If(vmli == 39):
             m.next = 'eol'
