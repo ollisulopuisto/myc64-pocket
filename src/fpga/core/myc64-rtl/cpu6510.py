@@ -31,7 +31,8 @@ class Cpu6510(Elaboratable):
     self.o_we = Signal()  # write enable
     self.i_irq = Signal()  # interrupt request
     self.i_nmi = Signal()  # non-maskable interrupt request
-    self.i_stun = Signal() # Stun the CPU for this cycle
+    self.i_stun = Signal() # Stun the CPU for this cycle (VIC-II owns the CPU phase, AEC low)
+    self.i_rdy = Signal(reset=1) # RDY (VIC-II BA): halts the CPU at its next read cycle
     self.o_port = Signal(6, reset=0b11_1111)
     self.i_port = Signal(6)
 
@@ -62,6 +63,12 @@ class Cpu6510(Elaboratable):
     with m.Elif(self.clk_1mhz_ph2_en):
       m.d.sync += rdy_mask.eq(1)
 
+    # T65 is clocked at ph1_en, which ends the bus cycle that used the CPU
+    # half just finished. i_stun (AEC) still skips the clock for the cycles
+    # where the VIC-II actually had the bus. RDY (BA) is separate: the T65
+    # keeps being clocked so it can finish write cycles (at most 3, the BA
+    # lead), and simply repeats a read cycle while Rdy is low (T65 gates Rdy
+    # with R/W internally, like the real 6510).
     m.d.comb += clk_enable.eq(self.clk_1mhz_ph1_en & ~self.i_stun & rdy_mask)
 
     # Savestate: T65 state is captured into a shadow register that sits in the
@@ -80,7 +87,7 @@ class Cpu6510(Elaboratable):
                                    i_Res_n=~rst,
                                    i_Mode=C(0b00, 2),
                                    i_BCD_en=C(0b1, 1),
-                                   i_Rdy=C(0b1, 1),
+                                   i_Rdy=self.i_rdy,
                                    i_Abort_n=C(0b1, 1),
                                    i_IRQ_n=~self.i_irq,
                                    i_NMI_n=~self.i_nmi,
@@ -95,7 +102,7 @@ class Cpu6510(Elaboratable):
 
     m.d.comb += we.eq(~we_n)
     m.d.comb += [self.o_addr.eq(addr), self.o_data.eq(data_o), self.o_we.eq(we)]
-    m.d.comb += [self.o_debug_valid.eq(clk_enable), self.o_debug_sync.eq(sync), self.o_debug_addr.eq(addr), self.o_debug_data.eq(data_i)]
+    m.d.comb += [self.o_debug_valid.eq(clk_enable & (self.i_rdy | we)), self.o_debug_sync.eq(sync), self.o_debug_addr.eq(addr), self.o_debug_data.eq(data_i)]
 
     port_dir = Signal(6)
     port = Signal(6)
