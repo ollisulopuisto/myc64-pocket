@@ -60,7 +60,7 @@ rm -f "$WORK/src/fpga/bios.vh"  # symlink to ../bios/bios.vh
 cp "$WORK/bios/bios.vh" "$WORK/src/fpga/bios.vh"
 ssh "$HOST" "if exist $REMOTE_DIR\\fpga\\output_files rmdir /s /q $REMOTE_DIR\\fpga\\output_files"
 COPYFILE_DISABLE=1 tar -C "$WORK/src" -czf - fpga | ssh "$HOST" "(if not exist $REMOTE_DIR mkdir $REMOTE_DIR) & tar -xzf - -C $REMOTE_DIR"
-QOUT=$(ssh "$HOST" "powershell -NoProfile -File E:\\fpga-shared\\qrun.ps1 -Session pocket-c64 -WorkDir %USERPROFILE%\\$REMOTE_DIR\\fpga -Command \"quartus_sh --flow compile ap_core.qpf\"" | tr -d '\r' | tail -1)
+QOUT=$(ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -File E:\\fpga-shared\\qrun.ps1 -Session pocket-c64 -WorkDir %USERPROFILE%\\$REMOTE_DIR\\fpga -Command \"quartus_sh --flow compile ap_core.qpf\"" | tr -d '\r' | tail -1)
 echo "$QOUT"
 case "$QOUT" in STARTED*) ;; *) echo "qrun did not start the job"; exit 1 ;; esac
 QLOG=$(printf "%s\n" "$QOUT" | sed -n 's/.* log=\([^ ]*\).*/\1/p')  # unique qrun-<timestamp>.log
