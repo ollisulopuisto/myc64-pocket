@@ -411,7 +411,8 @@ class VicII(Elaboratable):
     # the s-accesses, so moving the check has no other effect.
     with m.If(self.clk_1mhz_ph2_en & (cycle == 55)):
       for idx in range(8):
-        with m.If(r_d015[idx] & (sprites_y[idx] == raster)):
+        # 8-bit compare like the 6569, so sprites also start on lines 256+
+        with m.If(r_d015[idx] & (sprites_y[idx] == raster[0:8])):
           m.d.sync += [sprite_dma_on[idx].eq(1), mc[idx].eq(0), sprite_hdouble_toggle[idx].eq(0)]
 
     #
@@ -516,7 +517,11 @@ class VicII(Elaboratable):
 
       with m.State('g-access'):
         m.d.comb += [vic_owns_ph1.eq(bad_line_cond)]
-        with m.If(mode_bmm):
+        with m.If(~display_not_idle_state):
+          # Idle state: the 6569 fetches $3fff ($39ff with ECM) and draws it
+          # in black; this is what shows in an opened top/bottom border
+          m.d.comb += [self.o_addr.eq(Mux(mode_ecm, 0x39ff, 0x3fff))]
+        with m.Elif(mode_bmm):
           m.d.comb += [self.o_addr.eq(Cat(rc[0:3], vc[0:10], r_d018[3]))]
         with m.Else():
           with m.If(mode_ecm):
@@ -524,9 +529,11 @@ class VicII(Elaboratable):
           with m.Else():
             m.d.comb += [self.o_addr.eq(Cat(rc[0:3], vml[vmli][0:8], r_d018[1:4]))]
         with m.If(self.clk_1mhz_ph1_en):
+          m.d.sync += [pixshift_staging.eq(self.i_data[0:8])]
           with m.If(display_not_idle_state):
-            m.d.sync += [pixshift_staging.eq(self.i_data[0:8])]
             m.d.sync += fgcolor_staging.eq(vml[vmli])
+          with m.Else():
+            m.d.sync += fgcolor_staging.eq(0)
           m.d.sync += [vc.eq(vc + 1)]
           with m.If(vmli == 39):
             m.next = 'eol'
