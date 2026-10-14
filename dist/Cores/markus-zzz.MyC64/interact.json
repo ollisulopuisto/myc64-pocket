@@ -13,11 +13,11 @@
         "options": [
           {
             "value": 0,
-            "name": "Standard: D-pad / B"
+            "name": "Standard: D-pad Up jump"
           },
           {
             "value": 1,
-            "name": "Platformer: Btn B Jump"
+            "name": "Platformer: Down jumps"
           },
           {
             "value": 2,
@@ -34,11 +34,11 @@
         "options": [
           {
             "value": 0,
-            "name": "Left/Right/Top: Fire"
+            "name": "Left/Right/Up btn: Fire"
           },
           {
             "value": 1,
-            "name": "Bottom: Jump"
+            "name": "Down btn: Jump"
           },
           {
             "value": 2,
@@ -60,15 +60,15 @@
           },
           {
             "value": 1,
-            "name": "D-Pad: F1 F3 F5 F7"
+            "name": "D-pad U/R/D/L: F1/3/5/7"
           },
           {
             "value": 2,
-            "name": "A/B: Space / Return"
+            "name": "Rt/Dn btn: Space/Return"
           },
           {
             "value": 3,
-            "name": "X/Y: Run-Stop / 1"
+            "name": "Up/Left btn: Run-Stop/1"
           }
         ],
         "writeonly": true
@@ -82,15 +82,15 @@
         "options": [
           {
             "value": 0,
-            "name": "D-Pad: F2 F4 F6 F8"
+            "name": "D-pad U/R/D/L: F2/4/6/8"
           },
           {
             "value": 1,
-            "name": "A/B: Space / N"
+            "name": "Rt/Dn btn: Space / N"
           },
           {
             "value": 2,
-            "name": "X/Y: Y / 2"
+            "name": "Up/Left btn: Y / 2"
           },
           {
             "value": 3,
