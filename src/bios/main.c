@@ -65,7 +65,9 @@ static bool mod_l_active = false;
 
 uint8_t updated_slots;
 static uint8_t launch_seen;      // slots the host reported as updated since boot
-static uint32_t launch_check_at; // tick of the launch check, see irq()
+static uint8_t launch_done;      // slots handled by the launch check
+static uint32_t launch_next;     // next tick of the launch check, see irq()
+static uint32_t launch_end;      // the check stops at this tick
 
 static volatile int osd_idx;
 osd_mode_t osd_mode;
@@ -118,7 +120,8 @@ int main(void) {
   crts_boot();
   // A state restored on wake waits for BIOS_READY, before the C64 leaves reset
   ss_load_seen = *SS_LOAD_CNT; // counts loads since power-on, not since reset
-  launch_check_at = timer_ticks + 100; // ~1 s
+  launch_next = timer_ticks + 100;     // first look after ~1 s
+  launch_end = timer_ticks + 3100;     // ... for 30 s
   *BIOS_READY = 1;
   *C64_CTRL = bits_set(*C64_CTRL, 0, 1, 1); // Release reset for MyC64
 
@@ -196,27 +199,27 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
 
   updated_slots = *UPDATED_SLOTS;
 
-  // Launched with a program or disk (e.g. from Pocket Recents): the host has
-  // loaded the file into its slot but sent no update, so nothing would insert
-  // or run it. About a second after boot, treat each slot that holds a file
-  // and got no update meanwhile as freshly updated. (Not after a state wake.)
+  // Launched with a program, disk or cartridge (e.g. from Pocket Recents): the
+  // host puts the file into its slot without a slot update (or after the BIOS
+  // has already looked), so nothing would insert or run it. For the first 30 s
+  // look every 0.25 s for a slot that now holds a file and got no update, and
+  // handle it as freshly updated. Not after a state wake.
   launch_seen |= updated_slots;
-  if (launch_check_at && timer_ticks >= launch_check_at) {
-    launch_check_at = 0;
+  if (launch_next && timer_ticks >= launch_next) {
+    launch_next = (timer_ticks < launch_end) ? timer_ticks + 25 : 0;
     if (timer_ticks >= ss_suppress_until) {
-      // Which slots hold a file at launch (1 = yes); shown for a few seconds
-      static char launch_msg[] = "LAUNCH C0 P0 G0 D0 U0";
-      launch_msg[8] = bridge_ds_get_length(CRT_SLOT_ID) ? '1' : '0';
-      launch_msg[11] = bridge_ds_get_length(PRG_SLOT_ID) ? '1' : '0';
-      launch_msg[14] = bridge_ds_get_length(G64_SLOT_ID) ? '1' : '0';
-      launch_msg[17] = bridge_ds_get_length(D64_SLOT_ID) ? '1' : '0';
-      launch_msg[20] = launch_seen ? '1' : '0';
-      status_notify(launch_msg);
-      static const uint8_t launch_slots[] = {PRG_SLOT_ID, G64_SLOT_ID, D64_SLOT_ID};
-      for (unsigned i = 0; i < sizeof(launch_slots); i++) {
-        uint8_t id = launch_slots[i];
-        if (!(launch_seen & (1 << id)) && bridge_ds_get_length(id))
-          updated_slots |= 1 << id;
+      static const struct { uint8_t id; const char *name; } launch_slots[] = {
+          {CRT_SLOT_ID, "LAUNCH: CRT"}, {PRG_SLOT_ID, "LAUNCH: PRG"},
+          {G64_SLOT_ID, "LAUNCH: G64"}, {D64_SLOT_ID, "LAUNCH: D64"}};
+      for (unsigned i = 0; i < 4; i++) {
+        uint8_t bit = 1 << launch_slots[i].id;
+        if ((launch_seen & bit) || (launch_done & bit))
+          continue;
+        if (bridge_ds_get_length(launch_slots[i].id)) {
+          launch_done |= bit;
+          updated_slots |= bit;
+          status_notify(launch_slots[i].name);
+        }
       }
     }
   }
