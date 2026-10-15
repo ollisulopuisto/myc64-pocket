@@ -64,6 +64,8 @@ static uint8_t c64_saved_joy2 = 0;
 static bool mod_l_active = false;
 
 uint8_t updated_slots;
+static uint8_t launch_seen;      // slots the host reported as updated since boot
+static uint32_t launch_check_at; // tick of the launch check, see irq()
 
 static volatile int osd_idx;
 osd_mode_t osd_mode;
@@ -116,6 +118,7 @@ int main(void) {
   crts_boot();
   // A state restored on wake waits for BIOS_READY, before the C64 leaves reset
   ss_load_seen = *SS_LOAD_CNT; // counts loads since power-on, not since reset
+  launch_check_at = timer_ticks + 100; // ~1 s
   *BIOS_READY = 1;
   *C64_CTRL = bits_set(*C64_CTRL, 0, 1, 1); // Release reset for MyC64
 
@@ -192,6 +195,23 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   timer_ticks++;
 
   updated_slots = *UPDATED_SLOTS;
+
+  // Launched with a program or disk (e.g. from Pocket Recents): the host has
+  // loaded the file into its slot but sent no update, so nothing would insert
+  // or run it. About a second after boot, treat each slot that holds a file
+  // and got no update meanwhile as freshly updated. (Not after a state wake.)
+  launch_seen |= updated_slots;
+  if (launch_check_at && timer_ticks >= launch_check_at) {
+    launch_check_at = 0;
+    if (timer_ticks >= ss_suppress_until) {
+      static const uint8_t launch_slots[] = {PRG_SLOT_ID, G64_SLOT_ID, D64_SLOT_ID};
+      for (unsigned i = 0; i < sizeof(launch_slots); i++) {
+        uint8_t id = launch_slots[i];
+        if (!(launch_seen & (1 << id)) && bridge_ds_get_length(id))
+          updated_slots |= 1 << id;
+      }
+    }
+  }
 
   // A savestate was loaded: before the slot handlers, so updates in the same
   // tick are already treated as plain inserts
