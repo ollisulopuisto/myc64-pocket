@@ -25,6 +25,21 @@ static volatile int sel_row = 0;
 uint8_t joystick1;
 uint8_t joystick2;
 
+// The BASIC prompt is up when "READY." (screen codes) starts a row of the
+// default screen at $0400. The reset clears C64 RAM first, so a match cannot
+// be left over from before the reset.
+int c64_basic_ready(void) {
+  static const uint8_t ready[] = {0x12, 0x05, 0x01, 0x04, 0x19, 0x2e};
+  for (int row = 0; row < 25; row++) {
+    unsigned i = 0;
+    while (i < sizeof(ready) && C64_RAM_RD[0x0400 + row * 40 + i] == ready[i])
+      i++;
+    if (i == sizeof(ready))
+      return 1;
+  }
+  return 0;
+}
+
 void misc_reset_core(uint8_t cart_type) {
   // Like a power cycle: hold the C64 and 1541 in reset and clear all their
   // RAM (main, colour, drive, cartridge), so nothing of the previous program

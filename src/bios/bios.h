@@ -61,6 +61,7 @@
 // {valid, track_no}: tells warp mode the requested track is in track RAM
 #define C1541_TRACK_ACK ((volatile uint32_t *)0x30000108)
 #define SS_LOAD_CNT ((volatile uint32_t *)0x30000114) // completed savestate loads
+#define C64_RAM_RD ((volatile uint8_t *)0x50050000) // read C64 RAM (any address 0-$FFFF)
 #define BIOS_READY ((volatile uint32_t *)0x30000118)  // ROMs loaded, C64 out of reset
 #define MEM_WIPE ((volatile uint32_t *)0x3000011c)    // write: clear C64/1541/cart RAM; read: busy
 #define C1541_STATUS_WARP (1 << 9)
@@ -166,6 +167,7 @@ extern uint32_t ss_suppress_until;
 void savestate_loaded(void);
 void prgs_cancel(void);
 void status_notify(const char *msg);
+int c64_basic_ready(void); // 1 when "READY." is on the BASIC screen
 typedef enum { C64_CMD_LOAD, C64_CMD_RUN, C64_CMD_LIST, C64_CMD_DIR } c64_command_t;
 void c64_type_command(c64_command_t cmd);
 extern volatile uint8_t d64_loaded;

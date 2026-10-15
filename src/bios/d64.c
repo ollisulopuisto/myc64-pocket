@@ -309,9 +309,10 @@ void d64_autoboot_trigger(void) {
 
 void d64_autoboot_poll(void) {
   switch (autoboot_state) {
-  case 1: // Wait for C64 boot
+  case 1: // Wait for C64 boot: READY. on the screen (at least 1 s), or 10 s
     c64_isr_keyb_mask = 0;
-    if (timer_ticks >= autoboot_wait) {
+    if ((timer_ticks >= autoboot_wait - 200 && c64_basic_ready()) ||
+        timer_ticks >= autoboot_wait + 700) {
       autoboot_idx = 0;
       autoboot_state = 2; // Press first key
     }

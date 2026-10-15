@@ -74,8 +74,9 @@ void prgs_irq() {
       inject_state = IS_WAIT_BOOT;
     }
     break;
-  case IS_WAIT_BOOT:
-    if (timer_ticks >= inject_wait) {
+  case IS_WAIT_BOOT: // READY. on the screen (at least 1 s), or 10 s
+    if ((timer_ticks >= inject_wait - 200 && c64_basic_ready()) ||
+        timer_ticks >= inject_wait + 700) {
       load_prg(PRG_SLOT_ID);
       inject_wait = timer_ticks + 40;
       inject_state = IS_KEY_R;

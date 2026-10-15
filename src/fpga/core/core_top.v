@@ -892,6 +892,10 @@ module core_top (
   wire [31:0] c64_ram_a_dout;
   wire [31:0] c64_ram_b_dout;
   wire ss_ram_bridge_wr = bridge_wr && (bridge_addr[31:16] == 16'hB001);
+  // The BIOS can read C64 RAM through the savestate port (clk_74a, as the BIOS
+  // CPU): 0x5005_0000 + address, e.g. to see when BASIC has printed READY.
+  // Unused by the savestate while the BIOS reads (and vice versa).
+  wire bios_ram_rd;  // assigned with the other CPU bus decodes below
   genvar ri;
   generate
     for (ri = 0; ri < 4; ri = ri + 1) begin : c64_ram_lane
@@ -908,7 +912,7 @@ module core_top (
           // Bridge word = 4 consecutive bytes, first byte in bits 31:24
           .b_clk (clk_74a),
           .b_wr  (ss_ram_bridge_wr),
-          .b_addr(bridge_addr[15:2]),
+          .b_addr(bios_ram_rd ? cpu_mem_addr[15:2] : bridge_addr[15:2]),
           .b_din (bridge_wr_data[31-ri*8:24-ri*8]),
           .b_dout(c64_ram_b_dout[31-ri*8:24-ri*8])
       );
@@ -1204,6 +1208,7 @@ module core_top (
   assign ram_addr  = osd_ram_access ? osd_mem_addr : cpu_mem_addr;
   assign ram_wdata = cpu_mem_wdata;
   assign ram_wstrb = osd_ram_access ? 4'b0000 : cpu_mem_wstrb;
+  assign bios_ram_rd = cpu_mem_valid && (cpu_mem_addr[31:16] == 16'h5005) && (cpu_mem_wstrb == 4'b0000);
 
   always @* begin
     casex (cpu_mem_addr)
@@ -1226,6 +1231,7 @@ module core_top (
       32'h3000_0110: cpu_mem_rdata = {30'd0, control_mode};  // menu setting, static
       32'h3000_0114: cpu_mem_rdata = {24'd0, ss_load_cnt};  // completed state loads
       32'h3000_011c: cpu_mem_rdata = {31'd0, wipe_busy};
+      32'h5005_xxxx: cpu_mem_rdata = {c64_ram_b_dout[7:0], c64_ram_b_dout[15:8], c64_ram_b_dout[23:16], c64_ram_b_dout[31:24]};
       32'h4xxx_xxxx: cpu_mem_rdata = bridge_rdata;
       32'h7xxx_xxxx: cpu_mem_rdata = bridge_dpram_rdata;
       32'h8xxx_xxxx: cpu_mem_rdata = c1541_track_ram_rdata;
