@@ -66,6 +66,7 @@ static bool mod_l_active = false;
 uint8_t updated_slots;
 static uint8_t launch_seen;      // slots the host reported as updated since boot
 static uint8_t launch_done;      // slots handled by the launch check
+static uint32_t launch_dbg_a, launch_dbg_b; // debug message ticks
 static uint32_t launch_next;     // next tick of the launch check, see irq()
 static uint32_t launch_end;      // the check stops at this tick
 
@@ -120,6 +121,8 @@ int main(void) {
   crts_boot();
   // A state restored on wake waits for BIOS_READY, before the C64 leaves reset
   ss_load_seen = *SS_LOAD_CNT; // counts loads since power-on, not since reset
+  launch_dbg_a = timer_ticks + 200;
+  launch_dbg_b = timer_ticks + 600;
   launch_next = timer_ticks + 100;     // first look after ~1 s
   launch_end = timer_ticks + 3100;     // ... for 30 s
   *BIOS_READY = 1;
@@ -205,6 +208,25 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   // look every 0.25 s for a slot that now holds a file and got no update, and
   // handle it as freshly updated. Not after a state wake.
   launch_seen |= updated_slots;
+
+  // Debug: 2 s and 6 s after boot show the size (KB) of the CRT/PRG/G64/D64
+  // slots and the update bits seen, e.g. "C64k P0 G0 D0 U1" (U in hex)
+  if (timer_ticks == launch_dbg_a || timer_ticks == launch_dbg_b) {
+    static char dbg[48];
+    char *o = dbg;
+    static const uint8_t ids[] = {CRT_SLOT_ID, PRG_SLOT_ID, G64_SLOT_ID, D64_SLOT_ID};
+    static const char tags[] = {'C', 'P', 'G', 'D'};
+    for (unsigned i = 0; i < 4; i++) {
+      uint32_t kb = bridge_ds_get_length(ids[i]) / 1024;
+      *o++ = tags[i];
+      char tmp[10]; int n = 0;
+      do { tmp[n++] = '0' + kb % 10; kb /= 10; } while (kb);
+      while (n) *o++ = tmp[--n];
+      *o++ = 'k'; *o++ = ' ';
+    }
+    *o++ = 'U'; *o++ = "0123456789ABCDEF"[launch_seen & 15]; *o = 0;
+    status_notify(dbg);
+  }
   if (launch_next && timer_ticks >= launch_next) {
     launch_next = (timer_ticks < launch_end) ? timer_ticks + 25 : 0;
     if (timer_ticks >= ss_suppress_until) {
