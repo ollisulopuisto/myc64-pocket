@@ -451,7 +451,7 @@ class MyC64(Elaboratable):
         u_cpu.clk_1mhz_ph1_en.eq(self.i_clk_1mhz_ph1_en),
         u_cpu.clk_1mhz_ph2_en.eq(self.i_clk_1mhz_ph2_en),
         u_cpu.i_stun.eq(u_vic.o_steal_bus),
-        u_cpu.i_rdy.eq(u_vic.o_ba),
+        u_cpu.i_rdy.eq(1),  # test D: BA/RDY off
         # VIC-II
         u_vic.clk_8mhz_en.eq(1),
         u_vic.clk_1mhz_ph1_en.eq(self.i_clk_1mhz_ph1_en),
