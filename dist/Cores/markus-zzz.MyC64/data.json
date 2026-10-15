@@ -19,7 +19,6 @@
                 "required": false,
                 "deferload": true,
                 "parameters": 9,
-                "filename": "",
                 "extensions": [
                     "crt"
                 ]
@@ -30,7 +29,6 @@
                 "required": false,
                 "deferload": true,
                 "parameters": 9,
-                "filename": "",
                 "extensions": [
                     "prg"
                 ]
@@ -41,7 +39,6 @@
                 "required": false,
                 "deferload": true,
                 "parameters": 9,
-                "filename": "",
                 "extensions": [
                     "d64"
                 ]
@@ -52,7 +49,6 @@
                 "required": false,
                 "deferload": true,
                 "parameters": 9,
-                "filename": "",
                 "extensions": [
                     "g64"
                 ]
