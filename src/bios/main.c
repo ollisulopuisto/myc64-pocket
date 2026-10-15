@@ -204,6 +204,14 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   if (launch_check_at && timer_ticks >= launch_check_at) {
     launch_check_at = 0;
     if (timer_ticks >= ss_suppress_until) {
+      // Which slots hold a file at launch (1 = yes); shown for a few seconds
+      static char launch_msg[] = "LAUNCH C0 P0 G0 D0 U0";
+      launch_msg[8] = bridge_ds_get_length(CRT_SLOT_ID) ? '1' : '0';
+      launch_msg[11] = bridge_ds_get_length(PRG_SLOT_ID) ? '1' : '0';
+      launch_msg[14] = bridge_ds_get_length(G64_SLOT_ID) ? '1' : '0';
+      launch_msg[17] = bridge_ds_get_length(D64_SLOT_ID) ? '1' : '0';
+      launch_msg[20] = launch_seen ? '1' : '0';
+      status_notify(launch_msg);
       static const uint8_t launch_slots[] = {PRG_SLOT_ID, G64_SLOT_ID, D64_SLOT_ID};
       for (unsigned i = 0; i < sizeof(launch_slots); i++) {
         uint8_t id = launch_slots[i];
