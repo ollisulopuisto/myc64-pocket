@@ -405,11 +405,13 @@ class VicII(Elaboratable):
     m.d.comb += [vic_owns_ph1.eq(0)]
 
     # Sprite DMA switch-on. On the real VIC-II this check is made in the first
-    # phase of cycle 55 (and 56); doing it here (VIC half of core cycle 55)
-    # rather than at the p-access in cycle 58 lets BA below go low three
-    # cycles before sprite 0's first s-access. mc/hdouble are not used until
-    # the s-accesses, so moving the check has no other effect.
-    with m.If(self.clk_1mhz_ph2_en & (cycle == 55)):
+    # phase of cycle 55 AND of cycle 56 (VIC half of core cycles 55 and 56);
+    # doing it here rather than at the p-access in cycle 58 lets BA below go
+    # low three cycles before sprite 0's first s-access. The second check
+    # matters: a sprite Y that the CPU writes in cycle 55 (second phase) is
+    # only seen by it, and raster multiplexers rely on that. mc/hdouble are
+    # not used until the s-accesses, so moving the check has no other effect.
+    with m.If(self.clk_1mhz_ph2_en & ((cycle == 55) | (cycle == 56))):
       for idx in range(8):
         # 8-bit compare like the 6569, so sprites also start on lines 256+
         with m.If(r_d015[idx] & (sprites_y[idx] == raster[0:8])):
