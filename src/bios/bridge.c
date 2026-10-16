@@ -1,5 +1,16 @@
 #include "bios.h"
 
+// Wait for the host to answer a bridge command ("ok" in TARGET_0[31:16]). A slot
+// whose file the host cannot deliver never answers; give up after ~3 s instead
+// of hanging the BIOS (and with it the menus and the keyboard) for good.
+static int bridge_wait_ok(void) {
+  for (uint32_t n = 0; n < (1u << 26); n++) {
+    if ((*TARGET_0 >> 16) == 0x6F6B)
+      return 1;
+  }
+  return 0;
+}
+
 uint32_t bridge_ds_get_length(uint16_t slot_id) {
   volatile uint32_t *p = BRIDGE_DS_TABLE;
 
@@ -19,8 +30,8 @@ uint16_t bridge_ds_get_uint16(uint16_t slot_id, uint32_t offset) {
   *TARGET_28 = (uint32_t)p;
   *TARGET_2C = 2; // length
   *TARGET_0 = 0x636D0180;
-  while ((*TARGET_0 >> 16) != 0x6F6B)
-    ; // XXX: Maybe should read in one go and check the actual status as well.
+  if (!bridge_wait_ok())
+    return 0;
   return *p;
 }
 
@@ -31,8 +42,8 @@ uint32_t bridge_ds_get_uint32(uint16_t slot_id, uint32_t offset) {
   *TARGET_28 = (uint32_t)p;
   *TARGET_2C = 4; // length
   *TARGET_0 = 0x636D0180;
-  while ((*TARGET_0 >> 16) != 0x6F6B)
-    ;
+  if (!bridge_wait_ok())
+    return 0;
   return *p;
 }
 
@@ -47,8 +58,8 @@ void bridge_ds_read(uint16_t slot_id, uint32_t offset, uint32_t length,
     *TARGET_28 = 0x70000000;
     *TARGET_2C = chunk_size;
     *TARGET_0 = 0x636D0180;
-    while ((*TARGET_0 >> 16) != 0x6F6B)
-      ;
+    if (!bridge_wait_ok())
+      return;
 
     volatile uint8_t *p = (volatile uint8_t *)0x70000000;
     for (uint32_t idx = 0; idx < chunk_size; idx++) {
