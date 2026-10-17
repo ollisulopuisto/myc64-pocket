@@ -3,22 +3,12 @@
         "magic": "APF_VER_1",
         "data_slots": [
             {
-                "name": "C64 Game",
-                "id": 100,
-                "required": true,
-                "parameters": "0x113",
-                "extensions": [
-                    "json"
-                ],
-                "address": "",
-                "nonvolatile": false
-            },
-            {
                 "name": ".CRT (Cartridge)",
                 "id": "0",
                 "required": false,
                 "deferload": true,
-                "parameters": 9,
+                "parameters": 521,
+                "filename": "",
                 "extensions": [
                     "crt"
                 ]
@@ -29,6 +19,7 @@
                 "required": false,
                 "deferload": true,
                 "parameters": 9,
+                "filename": "",
                 "extensions": [
                     "prg"
                 ]
@@ -39,6 +30,7 @@
                 "required": false,
                 "deferload": true,
                 "parameters": 9,
+                "filename": "",
                 "extensions": [
                     "d64"
                 ]
@@ -49,6 +41,7 @@
                 "required": false,
                 "deferload": true,
                 "parameters": 9,
+                "filename": "",
                 "extensions": [
                     "g64"
                 ]
