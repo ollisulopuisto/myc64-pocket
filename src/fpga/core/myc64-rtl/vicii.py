@@ -412,7 +412,7 @@ class VicII(Elaboratable):
     with m.If(self.clk_1mhz_ph2_en & (cycle == 55)):
       for idx in range(8):
         # 8-bit compare like the 6569, so sprites also start on lines 256+
-        with m.If(r_d015[idx] & (sprites_y[idx] == raster[0:8])):
+        with m.If(r_d015[idx] & (sprites_y[idx] == raster)):
           m.d.sync += [sprite_dma_on[idx].eq(1), mc[idx].eq(0), sprite_hdouble_toggle[idx].eq(0)]
 
     #
