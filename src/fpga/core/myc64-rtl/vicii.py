@@ -566,11 +566,11 @@ class VicII(Elaboratable):
     with m.If(tmp_bus_wen & r_d011_writeStrobe):
       m.d.sync += [r_d011.eq(r_d011_writeSignal[0:7]), raster_irq[8].eq(r_d011_writeSignal[7])]
       # Writing the compare value of the current line raises the IRQ at once
-      with m.If(Cat(raster_irq[0:8], r_d011_writeSignal[7]) == raster):
+      with m.If((Cat(raster_irq[0:8], r_d011_writeSignal[7]) == raster) & (raster_irq != raster)):
         m.d.comb += irq_set[0].eq(1)
     with m.If(tmp_bus_wen & r_d012_writeStrobe):
       m.d.sync += [raster_irq[0:8].eq(r_d012_writeSignal)]
-      with m.If(Cat(r_d012_writeSignal, raster_irq[8]) == raster):
+      with m.If((Cat(r_d012_writeSignal, raster_irq[8]) == raster) & (raster_irq != raster)):
         m.d.comb += irq_set[0].eq(1)
     # A source firing in the same clock as an acknowledge wins
     with m.If(tmp_bus_wen & r_d019_writeStrobe):
