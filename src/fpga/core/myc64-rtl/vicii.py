@@ -197,8 +197,6 @@ class VicII(Elaboratable):
       m.d.sync += main_border_ff.eq(0)
 
 
-    irq_set = Signal(4)  # interrupt sources firing this clock, see $d019 below
-
     # Sprite to sprite collisions
     sprite2sprite_col = Signal(8)
     r_d01e_readStrobe = Signal()
@@ -209,14 +207,12 @@ class VicII(Elaboratable):
               writeSignal=None)
     with m.If(~self.o_steal_bus & self.clk_1mhz_ph2_en & self.i_reg_cs & r_d01e_readStrobe):
       m.d.sync += sprite2sprite_col.eq(0)
-    s2s_hit = Signal(8)
     for idx in range(8):
-      m.d.comb += s2s_hit[idx].eq(sprite_out_valid[idx] & (sprite_out_valid & ~(C(1, 8) << idx)).any())
-      with m.If(s2s_hit[idx]):
+      with m.If(sprite_out_valid[idx] & (sprite_out_valid & ~(C(1, 8) << idx)).any()):
         m.d.sync += sprite2sprite_col[idx].eq(1)
 
-    # The IRQ is raised when the register goes from empty to non-empty
-    m.d.comb += irq_set[2].eq(~sprite2sprite_col.any() & s2s_hit.any())
+    with m.If(sprite2sprite_col.any()):
+      m.d.sync += irq[2].eq(1)
 
     # Sprite to graphics collisions
     sprite2graph_col = Signal(8)
@@ -228,23 +224,20 @@ class VicII(Elaboratable):
               writeSignal=None)
     with m.If(~self.o_steal_bus & self.clk_1mhz_ph2_en & self.i_reg_cs & r_d01f_readStrobe):
       m.d.sync += sprite2graph_col.eq(0)
-    s2g_hit = Signal(8)
     for idx in range(8):
-      m.d.comb += s2g_hit[idx].eq(sprite_out_valid[idx] & graph_color_is_fg)
-      with m.If(s2g_hit[idx]):
+      with m.If(sprite_out_valid[idx] & graph_color_is_fg):
         m.d.sync += sprite2graph_col[idx].eq(1)
 
-    m.d.comb += irq_set[1].eq(~sprite2graph_col.any() & s2g_hit.any())
+    with m.If(sprite2graph_col.any()):
+      m.d.sync += irq[1].eq(1)
 
     # Raster IRQ
     with m.If(self.clk_8mhz_en):
       # XXX: Should be cycle 0 but for some reason 'raster' increments directly
       # after cycle 0 so that would result in the interrupt being delayed one
       # raster line.
-      # Once, on the first 8 MHz tick of cycle 1 (cycle is set to 1 at
-      # x == p_x_raster_last)
-      with m.If((cycle == 1) & (x == (p_x_raster_last + 1) % 0x1f8) & (raster == raster_irq)):
-        m.d.comb += irq_set[0].eq(1)
+      with m.If((cycle == 1) & (raster == raster_irq)):
+        m.d.sync += irq[0].eq(1)
 
     m.d.comb += [bad_line_cond.eq((raster >= 0x30) & (raster <= 0xf7) & (y[0:3] == r_d011[0:3]))]
 
@@ -565,18 +558,10 @@ class VicII(Elaboratable):
 
     with m.If(tmp_bus_wen & r_d011_writeStrobe):
       m.d.sync += [r_d011.eq(r_d011_writeSignal[0:7]), raster_irq[8].eq(r_d011_writeSignal[7])]
-      # Writing the compare value of the current line raises the IRQ at once
-      with m.If(Cat(raster_irq[0:8], r_d011_writeSignal[7]) == raster):
-        m.d.comb += irq_set[0].eq(1)
     with m.If(tmp_bus_wen & r_d012_writeStrobe):
       m.d.sync += [raster_irq[0:8].eq(r_d012_writeSignal)]
-      with m.If(Cat(r_d012_writeSignal, raster_irq[8]) == raster):
-        m.d.comb += irq_set[0].eq(1)
-    # A source firing in the same clock as an acknowledge wins
-    with m.If(tmp_bus_wen & r_d019_writeStrobe):
-      m.d.sync += [irq.eq((irq & ~r_d019_writeSignal[0:4]) | irq_set)]
-    with m.Else():
-      m.d.sync += [irq.eq(irq | irq_set)]
+    with m.If(tmp_bus_wen & r_d019_writeStrobe): # XXX: Bug: acknowledge should not have priority over the source that sets
+      m.d.sync += [irq.eq(irq ^ (irq & r_d019_writeSignal))]
 
     m.d.comb += [self.o_irq.eq((irq & r_d01a).any())]
 
