@@ -12,24 +12,43 @@
 
 #include "bios.h"
 
-// 4-bit nibble to 5-bit GCR lookup table
-static const uint8_t bin_to_gcr[16] = {
-    0x0A, // 0000 -> 01010
-    0x0B, // 0001 -> 01011
-    0x12, // 0010 -> 10010
-    0x13, // 0011 -> 10011
-    0x0E, // 0100 -> 01110
-    0x0F, // 0101 -> 01111
-    0x16, // 0110 -> 10110
-    0x17, // 0111 -> 10111
-    0x09, // 1000 -> 01001
-    0x19, // 1001 -> 11001
-    0x1A, // 1010 -> 11010
-    0x1B, // 1011 -> 11011
-    0x0D, // 1100 -> 01101
-    0x1D, // 1101 -> 11101
-    0x1E, // 1110 -> 11110
-    0x15  // 1111 -> 10101
+// 8-bit byte to 10-bit GCR lookup table (512 bytes in .rodata).
+// Precombines high and low nibble GCR transformations ((gcr[hi] << 5) | gcr[lo]).
+// Eliminates 4 nibble shifts and 4 bitwise ANDs per byte, reducing memory lookups
+// in encode_4bytes_to_track by 50% (from 8 down to 4 per 4 bytes encoded).
+static const uint16_t byte_to_gcr[256] = {
+    0x14A, 0x14B, 0x152, 0x153, 0x14E, 0x14F, 0x156, 0x157,
+    0x149, 0x159, 0x15A, 0x15B, 0x14D, 0x15D, 0x15E, 0x155,
+    0x16A, 0x16B, 0x172, 0x173, 0x16E, 0x16F, 0x176, 0x177,
+    0x169, 0x179, 0x17A, 0x17B, 0x16D, 0x17D, 0x17E, 0x175,
+    0x24A, 0x24B, 0x252, 0x253, 0x24E, 0x24F, 0x256, 0x257,
+    0x249, 0x259, 0x25A, 0x25B, 0x24D, 0x25D, 0x25E, 0x255,
+    0x26A, 0x26B, 0x272, 0x273, 0x26E, 0x26F, 0x276, 0x277,
+    0x269, 0x279, 0x27A, 0x27B, 0x26D, 0x27D, 0x27E, 0x275,
+    0x1CA, 0x1CB, 0x1D2, 0x1D3, 0x1CE, 0x1CF, 0x1D6, 0x1D7,
+    0x1C9, 0x1D9, 0x1DA, 0x1DB, 0x1CD, 0x1DD, 0x1DE, 0x1D5,
+    0x1EA, 0x1EB, 0x1F2, 0x1F3, 0x1EE, 0x1EF, 0x1F6, 0x1F7,
+    0x1E9, 0x1F9, 0x1FA, 0x1FB, 0x1ED, 0x1FD, 0x1FE, 0x1F5,
+    0x2CA, 0x2CB, 0x2D2, 0x2D3, 0x2CE, 0x2CF, 0x2D6, 0x2D7,
+    0x2C9, 0x2D9, 0x2DA, 0x2DB, 0x2CD, 0x2DD, 0x2DE, 0x2D5,
+    0x2EA, 0x2EB, 0x2F2, 0x2F3, 0x2EE, 0x2EF, 0x2F6, 0x2F7,
+    0x2E9, 0x2F9, 0x2FA, 0x2FB, 0x2ED, 0x2FD, 0x2FE, 0x2F5,
+    0x12A, 0x12B, 0x132, 0x133, 0x12E, 0x12F, 0x136, 0x137,
+    0x129, 0x139, 0x13A, 0x13B, 0x12D, 0x13D, 0x13E, 0x135,
+    0x32A, 0x32B, 0x332, 0x333, 0x32E, 0x32F, 0x336, 0x337,
+    0x329, 0x339, 0x33A, 0x33B, 0x32D, 0x33D, 0x33E, 0x335,
+    0x34A, 0x34B, 0x352, 0x353, 0x34E, 0x34F, 0x356, 0x357,
+    0x349, 0x359, 0x35A, 0x35B, 0x34D, 0x35D, 0x35E, 0x355,
+    0x36A, 0x36B, 0x372, 0x373, 0x36E, 0x36F, 0x376, 0x377,
+    0x369, 0x379, 0x37A, 0x37B, 0x36D, 0x37D, 0x37E, 0x375,
+    0x1AA, 0x1AB, 0x1B2, 0x1B3, 0x1AE, 0x1AF, 0x1B6, 0x1B7,
+    0x1A9, 0x1B9, 0x1BA, 0x1BB, 0x1AD, 0x1BD, 0x1BE, 0x1B5,
+    0x3AA, 0x3AB, 0x3B2, 0x3B3, 0x3AE, 0x3AF, 0x3B6, 0x3B7,
+    0x3A9, 0x3B9, 0x3BA, 0x3BB, 0x3AD, 0x3BD, 0x3BE, 0x3B5,
+    0x3CA, 0x3CB, 0x3D2, 0x3D3, 0x3CE, 0x3CF, 0x3D6, 0x3D7,
+    0x3C9, 0x3D9, 0x3DA, 0x3DB, 0x3CD, 0x3DD, 0x3DE, 0x3D5,
+    0x2AA, 0x2AB, 0x2B2, 0x2B3, 0x2AE, 0x2AF, 0x2B6, 0x2B7,
+    0x2A9, 0x2B9, 0x2BA, 0x2BB, 0x2AD, 0x2BD, 0x2BE, 0x2B5
 };
 
 // Sectors per physical track (1-based index, index 0 unused)
@@ -39,6 +58,15 @@ static const uint8_t sectors_per_track[41] = {
     19, 19, 19, 19, 19, 19, 19,                                         // 18-24
     18, 18, 18, 18, 18, 18,                                             // 25-30
     17, 17, 17, 17, 17, 17, 17, 17, 17, 17                              // 31-40
+};
+
+// Precomputed byte offsets into D64 file for each track 1..41 (O(1) lookup).
+static const uint32_t track_d64_offset_lut[42] = {
+    0,      0,      5376,   10752,  16128,  21504,  26880,  32256,  37632,
+    43008,  48384,  53760,  59136,  64512,  69888,  75264,  80640,  86016,
+    91392,  96256,  101120, 105984, 110848, 115712, 120576, 125440, 130048,
+    134656, 139264, 143872, 148480, 153088, 157440, 161792, 166144, 170496,
+    174848, 179200, 183552, 187904, 192256, 196608
 };
 
 // Target track byte lengths per speed zone
@@ -68,38 +96,24 @@ static uint8_t d64_max_tracks = 35;
 
 static uint8_t sector_buf[256];
 
+// Encodes 4 raw binary bytes into 5 GCR-encoded bytes directly into C1541 track RAM.
+// Utilizes the precomputed byte_to_gcr 8b->10b table for fast single-instruction lookups.
 static inline void encode_4bytes_to_track(const uint8_t *in, uint16_t out_pos) {
-  uint8_t n0 = (in[0] >> 4) & 0x0F;
-  uint8_t n1 = in[0] & 0x0F;
-  uint8_t n2 = (in[1] >> 4) & 0x0F;
-  uint8_t n3 = in[1] & 0x0F;
-  uint8_t n4 = (in[2] >> 4) & 0x0F;
-  uint8_t n5 = in[2] & 0x0F;
-  uint8_t n6 = (in[3] >> 4) & 0x0F;
-  uint8_t n7 = in[3] & 0x0F;
+  uint32_t g01 = byte_to_gcr[in[0]];
+  uint32_t g23 = byte_to_gcr[in[1]];
+  uint32_t g45 = byte_to_gcr[in[2]];
+  uint32_t g67 = byte_to_gcr[in[3]];
 
-  uint8_t g0 = bin_to_gcr[n0];
-  uint8_t g1 = bin_to_gcr[n1];
-  uint8_t g2 = bin_to_gcr[n2];
-  uint8_t g3 = bin_to_gcr[n3];
-  uint8_t g4 = bin_to_gcr[n4];
-  uint8_t g5 = bin_to_gcr[n5];
-  uint8_t g6 = bin_to_gcr[n6];
-  uint8_t g7 = bin_to_gcr[n7];
-
-  C1541_TRACK_RAM[out_pos + 0] = ((g0 << 3) | (g1 >> 2)) & 0xFF;
-  C1541_TRACK_RAM[out_pos + 1] = ((g1 << 6) | (g2 << 1) | (g3 >> 4)) & 0xFF;
-  C1541_TRACK_RAM[out_pos + 2] = ((g3 << 4) | (g4 >> 1)) & 0xFF;
-  C1541_TRACK_RAM[out_pos + 3] = ((g4 << 7) | (g5 << 2) | (g6 >> 3)) & 0xFF;
-  C1541_TRACK_RAM[out_pos + 4] = ((g6 << 5) | g7) & 0xFF;
+  C1541_TRACK_RAM[out_pos + 0] = (uint8_t)(g01 >> 2);
+  C1541_TRACK_RAM[out_pos + 1] = (uint8_t)((g01 << 6) | (g23 >> 4));
+  C1541_TRACK_RAM[out_pos + 2] = (uint8_t)((g23 << 4) | (g45 >> 6));
+  C1541_TRACK_RAM[out_pos + 3] = (uint8_t)((g45 << 2) | (g67 >> 8));
+  C1541_TRACK_RAM[out_pos + 4] = (uint8_t)g67;
 }
 
-static uint32_t get_track_d64_offset(uint8_t track) {
-  uint32_t sec_count = 0;
-  for (uint8_t t = 1; t < track; t++) {
-    sec_count += (t <= 40) ? sectors_per_track[t] : 17;
-  }
-  return sec_count * 256;
+static inline uint32_t get_track_d64_offset(uint8_t track) {
+  if (track <= 41) return track_d64_offset_lut[track];
+  return track_d64_offset_lut[41] + (uint32_t)(track - 41) * (17 * 256);
 }
 
 static void synthesize_d64_track(uint8_t track_id) {
