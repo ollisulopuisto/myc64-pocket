@@ -12,3 +12,10 @@ tests/test_c64_shortcuts
 tests/test_d64_gcr
 src/fpga/core/myc64-rtl/myc64.v
 src/fpga/core/my1541-rtl/my1541.v
+
+# local build / dev artifacts
+.venv/
+MyC64-Pocket.zip
+src/fpga/core/my1541-rtl/my1541_ss_map.json
+src/fpga/core/myc64-rtl/myc64_ss_map.json
+utils/build-instances.py
