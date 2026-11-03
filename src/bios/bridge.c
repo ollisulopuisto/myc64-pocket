@@ -51,8 +51,22 @@ void bridge_ds_read(uint16_t slot_id, uint32_t offset, uint32_t length,
       ;
 
     volatile uint8_t *p = (volatile uint8_t *)0x70000000;
-    for (uint32_t idx = 0; idx < chunk_size; idx++) {
-      *dst++ = p[idx];
+
+    // Fast path: if destination pointer and chunk size are 4-byte aligned,
+    // copy 32-bit words instead of single bytes. This reduces load/store
+    // memory operations and loop counter iterations by 75% on the PicoRV32 CPU.
+    if ((((uintptr_t)dst | chunk_size) & 3) == 0) {
+      volatile const uint32_t *sp = (volatile const uint32_t *)p;
+      uint32_t *dp = (uint32_t *)dst;
+      uint32_t words = chunk_size >> 2;
+      for (uint32_t i = 0; i < words; i++) {
+        dp[i] = sp[i];
+      }
+      dst += chunk_size;
+    } else {
+      for (uint32_t idx = 0; idx < chunk_size; idx++) {
+        *dst++ = p[idx];
+      }
     }
 
     length -= chunk_size;

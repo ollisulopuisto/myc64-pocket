@@ -94,7 +94,8 @@ static uint8_t disk_id1 = 0x32; // Default '2'
 static uint8_t disk_id2 = 0x41; // Default 'A'
 static uint8_t d64_max_tracks = 35;
 
-static uint8_t sector_buf[256];
+// 4-byte aligned sector buffer ensuring bridge_ds_read hits the fast 32-bit word copy path
+static uint8_t sector_buf[256] __attribute__((aligned(4)));
 
 // Encodes 4 raw binary bytes into 5 GCR-encoded bytes directly into C1541 track RAM.
 // Utilizes the precomputed byte_to_gcr 8b->10b table for fast single-instruction lookups.
