@@ -47,13 +47,16 @@ static void load_track(uint8_t track_id) {
 }
 
 void load_g64() {
-  // Setup track offsets
+  // Batch read the entire 84-entry track offset table (336 bytes) in a single
+  // bridge transaction instead of 84 individual 4-byte transactions. Because
+  // track_offsets is a 4-byte aligned uint32_t buffer and 336 is word-aligned,
+  // bridge_ds_read hits the fast 32-bit copy path, cutting 83 bridge transactions
+  // and eliminating ~415 hardware register accesses/polling loops in the IRQ handler.
+  bridge_ds_read(G64_SLOT_ID, G64_TRACK_OFFSET_TABLE, sizeof(track_offsets),
+                 (uint8_t *)track_offsets);
   for (unsigned i = 0; i < G64_NUM_TRACKS; i++) {
-    uint32_t track_off =
-        bridge_ds_get_uint32(G64_SLOT_ID, G64_TRACK_OFFSET_TABLE + i * 4);
-    track_offsets[i] =
-        track_off ? track_off + 2
-                  : 0; // skip the 16 bit track length field (if defined)
+    if (track_offsets[i])
+      track_offsets[i] += 2; // skip the 16 bit track length field (if defined)
   }
 
   // Setup track sizes
