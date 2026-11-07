@@ -24,7 +24,7 @@
 #define G64_TRACK_OFFSET_TABLE 12
 
 static uint32_t track_offsets[G64_NUM_TRACKS];
-static uint16_t track_sizes[G64_NUM_TRACKS];
+static volatile uint16_t track_sizes[G64_NUM_TRACKS];
 
 static volatile uint8_t track_no = 0xff;
 static volatile uint8_t led_on;
@@ -36,6 +36,15 @@ static volatile uint32_t status_bar_timeout;
 static void load_track(uint8_t track_id) {
   while ((*TARGET_0 >> 16) != 0x6F6B)
     ;
+
+  // On-demand lazy fetch & cache: if track size hasn't been fetched yet, read
+  // the 16-bit track length prefix once and cache it in track_sizes[track_id].
+  // Subsequent seeks to this track reuse the cached value with 0 bridge overhead.
+  if (track_sizes[track_id] == 0 && track_offsets[track_id]) {
+    track_sizes[track_id] =
+        bridge_ds_get_uint16(G64_SLOT_ID, track_offsets[track_id] - 2);
+  }
+
   // Write to track size register before we fire off the refill
   *C1541_TRACK_LEN = track_sizes[track_id];
 
@@ -59,11 +68,11 @@ void load_g64() {
       track_offsets[i] += 2; // skip the 16 bit track length field (if defined)
   }
 
-  // Setup track sizes
+  // Reset track sizes for lazy on-demand loading. Eliminates 35-84 scalar
+  // bridge transactions (up to 420 register writes and 84 blocking spin loops)
+  // during disk insertion inside the IRQ handler.
   for (unsigned i = 0; i < G64_NUM_TRACKS; i++) {
-    if (!track_offsets[i])
-      continue;
-    track_sizes[i] = bridge_ds_get_uint16(G64_SLOT_ID, track_offsets[i] - 2);
+    track_sizes[i] = 0;
   }
 
   track_no = 0xff;
