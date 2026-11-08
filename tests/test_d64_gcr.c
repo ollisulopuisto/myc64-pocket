@@ -3,7 +3,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "bios.h"
+#undef NULL
+#include "../src/bios/bios.h"
 
 #undef C1541_TRACK_RAM
 #undef C1541_TRACK_LEN
@@ -58,7 +59,7 @@ void misc_reset_core(uint8_t cart_type) { (void)cart_type; }
 void osd_printf(int x, int y, const char *fmt, ...) { (void)x; (void)y; (void)fmt; }
 
 // Include the actual production d64.c directly to exercise its synthesize_d64_track implementation
-#include "d64.c"
+#include "../src/bios/d64.c"
 
 // Baseline sequential per-sector track synthesis (pre-optimization reference)
 static void synthesize_d64_track_orig(uint8_t track_id, uint8_t *dest_ram, uint16_t *out_len) {
