@@ -94,8 +94,10 @@ static uint8_t disk_id1 = 0x32; // Default '2'
 static uint8_t disk_id2 = 0x41; // Default 'A'
 static uint8_t d64_max_tracks = 35;
 
-// 4-byte aligned sector buffer ensuring bridge_ds_read hits the fast 32-bit word copy path
-static uint8_t sector_buf[256] __attribute__((aligned(4)));
+// 4-byte aligned track buffer (max 21 sectors * 256 bytes = 5376 bytes).
+// Allows batch reading all sectors of a track in a single bridge_ds_read call
+// utilizing the word-aligned fast copy path and maximizing 1024-byte DPRAM chunks.
+static uint8_t track_raw_buf[21 * 256] __attribute__((aligned(4)));
 
 // Encodes 4 raw binary bytes into 5 GCR-encoded bytes directly into C1541 track RAM.
 // Utilizes the precomputed byte_to_gcr 8b->10b table for fast single-instruction lookups.
@@ -137,10 +139,16 @@ static void synthesize_d64_track(uint8_t track_id) {
   uint32_t d64_offset = get_track_d64_offset(phys_track);
   uint16_t track_pos = 0;
 
+  // Batch read all contiguous sectors for this track in a single bridge_ds_read call.
+  // Instead of issuing 17 to 21 individual 256-byte bridge reads (each doing 5 register
+  // writes, handshake spin-wait, and small 256-byte copies), batching reads the entire
+  // track using full 1024-byte DPRAM chunks (5-6 transactions). This reduces bridge
+  // transactions by up to 71.4% and significantly lowers interrupt latency on track seeks.
+  uint32_t track_raw_bytes = (uint32_t)num_sectors * 256;
+  bridge_ds_read(D64_SLOT_ID, d64_offset, track_raw_bytes, track_raw_buf);
+
   for (uint8_t sec = 0; sec < num_sectors; sec++) {
-    // Read 256 bytes for this sector from APF Bridge
-    bridge_ds_read(D64_SLOT_ID, d64_offset, 256, sector_buf);
-    d64_offset += 256;
+    const uint8_t *sec_data = &track_raw_buf[sec * 256];
 
     // 1. Header Sync (5 bytes 0xFF)
     for (int i = 0; i < 5; i++) {
@@ -169,24 +177,24 @@ static void synthesize_d64_track(uint8_t track_id) {
     // 5. Data Block (260 raw bytes -> 325 GCR bytes)
     // Format: $07, 256 data bytes, data_chk, $00, $00
     // Chunk 0: $07, sec[0], sec[1], sec[2] -> 5 GCR bytes
-    uint8_t chunk0[4] = {0x07, sector_buf[0], sector_buf[1], sector_buf[2]};
+    uint8_t chunk0[4] = {0x07, sec_data[0], sec_data[1], sec_data[2]};
     encode_4bytes_to_track(chunk0, track_pos);
     track_pos += 5;
 
-    uint8_t data_chk = sector_buf[0] ^ sector_buf[1] ^ sector_buf[2];
+    uint8_t data_chk = sec_data[0] ^ sec_data[1] ^ sec_data[2];
 
     // Chunks 1 to 63: 252 data bytes in 63 chunks of 4 -> 315 GCR bytes
     for (int c = 0; c < 63; c++) {
       int byte_idx = 3 + c * 4;
-      data_chk ^= sector_buf[byte_idx] ^ sector_buf[byte_idx + 1] ^
-                  sector_buf[byte_idx + 2] ^ sector_buf[byte_idx + 3];
-      encode_4bytes_to_track(&sector_buf[byte_idx], track_pos);
+      data_chk ^= sec_data[byte_idx] ^ sec_data[byte_idx + 1] ^
+                  sec_data[byte_idx + 2] ^ sec_data[byte_idx + 3];
+      encode_4bytes_to_track(&sec_data[byte_idx], track_pos);
       track_pos += 5;
     }
 
     // Chunk 64 (last 4 raw bytes): sec[255], data_chk, $00, $00 -> 5 GCR bytes
-    data_chk ^= sector_buf[255];
-    uint8_t chunk_last[4] = {sector_buf[255], data_chk, 0x00, 0x00};
+    data_chk ^= sec_data[255];
+    uint8_t chunk_last[4] = {sec_data[255], data_chk, 0x00, 0x00};
     encode_4bytes_to_track(chunk_last, track_pos);
     track_pos += 5;
 
@@ -217,9 +225,9 @@ void load_d64() {
   // Track 18 offset = (17 * 21) * 256 = 357 * 256 = 91392 (0x16500)
   // Disk ID is at offset 162-163 ($A2-$A3) within sector 0
   uint32_t t18_offset = get_track_d64_offset(18);
-  bridge_ds_read(D64_SLOT_ID, t18_offset + 162, 2, sector_buf);
-  disk_id1 = sector_buf[0];
-  disk_id2 = sector_buf[1];
+  bridge_ds_read(D64_SLOT_ID, t18_offset + 162, 2, track_raw_buf);
+  disk_id1 = track_raw_buf[0];
+  disk_id2 = track_raw_buf[1];
 
   d64_track_no = 0xff;
   d64_loaded = 1;

@@ -52,6 +52,162 @@ static void encode_4bytes_opt(const uint8_t *in, uint8_t *out) {
   out[4] = (uint8_t)g67;
 }
 
+#define BRIDGE_DPRAM_SIZE 1024
+static uint8_t mock_d64_file[196608];
+static uint32_t bridge_tx_count = 0;
+
+static void mock_bridge_ds_read(uint16_t slot_id, uint32_t offset, uint32_t length, uint8_t *dst) {
+    (void)slot_id;
+    const uint32_t buf_size = BRIDGE_DPRAM_SIZE;
+    while (length > 0) {
+        bridge_tx_count++;
+        uint32_t chunk_size = (length < buf_size) ? length : buf_size;
+        if ((((uintptr_t)dst | chunk_size) & 3) == 0) {
+            const uint32_t *sp = (const uint32_t *)&mock_d64_file[offset];
+            uint32_t *dp = (uint32_t *)dst;
+            uint32_t words = chunk_size >> 2;
+            for (uint32_t i = 0; i < words; i++) {
+                dp[i] = sp[i];
+            }
+            dst += chunk_size;
+        } else {
+            for (uint32_t i = 0; i < chunk_size; i++) {
+                *dst++ = mock_d64_file[offset + i];
+            }
+        }
+        length -= chunk_size;
+        offset += chunk_size;
+    }
+}
+
+static const uint8_t sectors_per_track[41] = {
+    0,
+    21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21,
+    19, 19, 19, 19, 19, 19, 19,
+    18, 18, 18, 18, 18, 18,
+    17, 17, 17, 17, 17, 17, 17, 17, 17, 17
+};
+
+static const uint32_t track_d64_offset_lut[42] = {
+    0,      0,      5376,   10752,  16128,  21504,  26880,  32256,  37632,
+    43008,  48384,  53760,  59136,  64512,  69888,  75264,  80640,  86016,
+    91392,  96256,  101120, 105984, 110848, 115712, 120576, 125440, 130048,
+    134656, 139264, 143872, 148480, 153088, 157440, 161792, 166144, 170496,
+    174848, 179200, 183552, 187904, 192256, 196608
+};
+
+static const uint16_t zone_track_len[4] = { 6250, 6666, 7142, 7692 };
+
+#define SPEED_ZONE(trk) ((trk) <= 17 ? 3 : ((trk) <= 24 ? 2 : ((trk) <= 30 ? 1 : 0)))
+
+// Synthesize track using sequential per-sector reads (original approach)
+static void synth_orig(uint8_t track_id, uint8_t *track_ram) {
+    uint8_t phys_track = (track_id >> 1) + 1;
+    uint8_t num_sectors = sectors_per_track[phys_track];
+    uint8_t zone = SPEED_ZONE(phys_track);
+    uint16_t target_len = zone_track_len[zone];
+    uint16_t base_gap = (target_len - (num_sectors * 354)) / num_sectors;
+    if (base_gap < 4) base_gap = 4;
+    uint32_t d64_offset = track_d64_offset_lut[phys_track];
+    uint16_t track_pos = 0;
+    uint8_t sec_buf[256];
+
+    for (uint8_t sec = 0; sec < num_sectors; sec++) {
+        mock_bridge_ds_read(3, d64_offset, 256, sec_buf);
+        d64_offset += 256;
+
+        for (int i = 0; i < 5; i++) track_ram[track_pos++] = 0xFF;
+
+        uint8_t hdr_chk = sec ^ phys_track ^ 0x41 ^ 0x32;
+        uint8_t raw_hdr[8] = {0x08, hdr_chk, sec, phys_track, 0x41, 0x32, 0x0F, 0x0F};
+        encode_4bytes_opt(&raw_hdr[0], &track_ram[track_pos]);
+        track_pos += 5;
+        encode_4bytes_opt(&raw_hdr[4], &track_ram[track_pos]);
+        track_pos += 5;
+
+        for (int i = 0; i < 9; i++) track_ram[track_pos++] = 0x55;
+        for (int i = 0; i < 5; i++) track_ram[track_pos++] = 0xFF;
+
+        uint8_t chunk0[4] = {0x07, sec_buf[0], sec_buf[1], sec_buf[2]};
+        encode_4bytes_opt(chunk0, &track_ram[track_pos]);
+        track_pos += 5;
+
+        uint8_t data_chk = sec_buf[0] ^ sec_buf[1] ^ sec_buf[2];
+        for (int c = 0; c < 63; c++) {
+            int byte_idx = 3 + c * 4;
+            data_chk ^= sec_buf[byte_idx] ^ sec_buf[byte_idx + 1] ^
+                        sec_buf[byte_idx + 2] ^ sec_buf[byte_idx + 3];
+            encode_4bytes_opt(&sec_buf[byte_idx], &track_ram[track_pos]);
+            track_pos += 5;
+        }
+
+        data_chk ^= sec_buf[255];
+        uint8_t chunk_last[4] = {sec_buf[255], data_chk, 0x00, 0x00};
+        encode_4bytes_opt(chunk_last, &track_ram[track_pos]);
+        track_pos += 5;
+
+        for (int i = 0; i < base_gap; i++) {
+            if (track_pos < target_len) track_ram[track_pos++] = 0x55;
+        }
+    }
+    while (track_pos < target_len) track_ram[track_pos++] = 0x55;
+}
+
+// Synthesize track using batch read (optimized approach)
+static void synth_opt(uint8_t track_id, uint8_t *track_ram) {
+    uint8_t phys_track = (track_id >> 1) + 1;
+    uint8_t num_sectors = sectors_per_track[phys_track];
+    uint8_t zone = SPEED_ZONE(phys_track);
+    uint16_t target_len = zone_track_len[zone];
+    uint16_t base_gap = (target_len - (num_sectors * 354)) / num_sectors;
+    if (base_gap < 4) base_gap = 4;
+    uint32_t d64_offset = track_d64_offset_lut[phys_track];
+    uint16_t track_pos = 0;
+    uint8_t track_buf[21 * 256] __attribute__((aligned(4)));
+
+    uint32_t track_raw_bytes = (uint32_t)num_sectors * 256;
+    mock_bridge_ds_read(3, d64_offset, track_raw_bytes, track_buf);
+
+    for (uint8_t sec = 0; sec < num_sectors; sec++) {
+        const uint8_t *sec_data = &track_buf[sec * 256];
+
+        for (int i = 0; i < 5; i++) track_ram[track_pos++] = 0xFF;
+
+        uint8_t hdr_chk = sec ^ phys_track ^ 0x41 ^ 0x32;
+        uint8_t raw_hdr[8] = {0x08, hdr_chk, sec, phys_track, 0x41, 0x32, 0x0F, 0x0F};
+        encode_4bytes_opt(&raw_hdr[0], &track_ram[track_pos]);
+        track_pos += 5;
+        encode_4bytes_opt(&raw_hdr[4], &track_ram[track_pos]);
+        track_pos += 5;
+
+        for (int i = 0; i < 9; i++) track_ram[track_pos++] = 0x55;
+        for (int i = 0; i < 5; i++) track_ram[track_pos++] = 0xFF;
+
+        uint8_t chunk0[4] = {0x07, sec_data[0], sec_data[1], sec_data[2]};
+        encode_4bytes_opt(chunk0, &track_ram[track_pos]);
+        track_pos += 5;
+
+        uint8_t data_chk = sec_data[0] ^ sec_data[1] ^ sec_data[2];
+        for (int c = 0; c < 63; c++) {
+            int byte_idx = 3 + c * 4;
+            data_chk ^= sec_data[byte_idx] ^ sec_data[byte_idx + 1] ^
+                        sec_data[byte_idx + 2] ^ sec_data[byte_idx + 3];
+            encode_4bytes_opt(&sec_data[byte_idx], &track_ram[track_pos]);
+            track_pos += 5;
+        }
+
+        data_chk ^= sec_data[255];
+        uint8_t chunk_last[4] = {sec_data[255], data_chk, 0x00, 0x00};
+        encode_4bytes_opt(chunk_last, &track_ram[track_pos]);
+        track_pos += 5;
+
+        for (int i = 0; i < base_gap; i++) {
+            if (track_pos < target_len) track_ram[track_pos++] = 0x55;
+        }
+    }
+    while (track_pos < target_len) track_ram[track_pos++] = 0x55;
+}
+
 int main() {
     printf("Testing D64 GCR encoding unit test...\n");
 
@@ -88,6 +244,67 @@ int main() {
 
     printf("Header marker: 0x%02X (expected 0x52)\n", gcr_hdr[0]);
     printf("Data marker:   0x%02X (expected 0x55)\n", gcr_data[0]);
-    printf("All D64 GCR tests passed successfully!\n");
+
+    // Test track synthesis batching vs sequential bridge reads
+    printf("\nTesting D64 track synthesis batch bridge read optimization...\n");
+
+    // Fill mock D64 image with test pattern
+    for (uint32_t i = 0; i < sizeof(mock_d64_file); i++) {
+        mock_d64_file[i] = (uint8_t)((i * 37 + 11) & 0xFF);
+    }
+
+    uint8_t ram_orig[8192];
+    uint8_t ram_opt[8192];
+
+    uint32_t total_tx_orig = 0;
+    uint32_t total_tx_opt = 0;
+
+    // Test representative tracks across all 4 speed zones (Tracks 1, 18, 25, 31)
+    uint8_t test_tracks[] = {1, 18, 25, 31};
+    for (size_t i = 0; i < sizeof(test_tracks); i++) {
+        uint8_t trk = test_tracks[i];
+        uint8_t track_id = (trk - 1) * 2;
+        uint8_t num_sec = sectors_per_track[trk];
+        uint16_t expected_tx_opt = (num_sec * 256 + BRIDGE_DPRAM_SIZE - 1) / BRIDGE_DPRAM_SIZE;
+
+        memset(ram_orig, 0, sizeof(ram_orig));
+        memset(ram_opt, 0, sizeof(ram_opt));
+
+        bridge_tx_count = 0;
+        synth_orig(track_id, ram_orig);
+        uint32_t tx_orig = bridge_tx_count;
+
+        bridge_tx_count = 0;
+        synth_opt(track_id, ram_opt);
+        uint32_t tx_opt = bridge_tx_count;
+
+        assert(tx_orig == num_sec);
+        assert(tx_opt == expected_tx_opt);
+        assert(memcmp(ram_orig, ram_opt, zone_track_len[SPEED_ZONE(trk)]) == 0);
+
+        printf("Track %2d (%2d sectors): Orig %2u tx -> Opt %2u tx (%.1f%% reduction)\n",
+               trk, num_sec, tx_orig, tx_opt,
+               ((double)(tx_orig - tx_opt) / tx_orig) * 100.0);
+
+        total_tx_orig += tx_orig;
+        total_tx_opt += tx_opt;
+    }
+
+    printf("Overall representative track seeking: %u -> %u bridge transactions (%.1f%% reduction)\n",
+           total_tx_orig, total_tx_opt,
+           ((double)(total_tx_orig - total_tx_opt) / total_tx_orig) * 100.0);
+
+    // Verify all 35 tracks for 100% byte equivalence
+    for (uint8_t trk = 1; trk <= 35; trk++) {
+        uint8_t track_id = (trk - 1) * 2;
+        memset(ram_orig, 0, sizeof(ram_orig));
+        memset(ram_opt, 0, sizeof(ram_opt));
+        synth_orig(track_id, ram_orig);
+        synth_opt(track_id, ram_opt);
+        assert(memcmp(ram_orig, ram_opt, zone_track_len[SPEED_ZONE(trk)]) == 0);
+    }
+
+    printf("All 35 physical tracks verified byte-for-byte identical!\n");
+    printf("All D64 GCR & track synthesis tests passed successfully!\n");
     return 0;
 }
