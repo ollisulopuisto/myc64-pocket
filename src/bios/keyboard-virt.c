@@ -57,15 +57,10 @@ const struct entry *const rows[] = {row_0, row_1, row_2, row_3, row_4};
 
 uint8_t prev_cols[N_ROWS];
 
-unsigned row_length(unsigned row_idx) {
-  const struct entry *p = rows[row_idx];
-  unsigned len = 0;
-  while (p->str) {
-    len++;
-    p++;
-  }
-  return len;
-}
+// Precomputed row entry counts for each virtual keyboard row.
+// Eliminates repetitive linear pointer traversal and null checks of entry structs
+// on every D-pad navigation event in the IRQ handler, providing O(1) boundary checks.
+static const uint8_t row_lengths[N_ROWS] = {17, 16, 15, 16, 1};
 
 void keyboard_virt_handle() {
   if (KEYB_POSEDGE(dpad_up)) {
@@ -76,7 +71,7 @@ void keyboard_virt_handle() {
     } else {
       sel_row = N_ROWS - 1;
     }
-    sel_col = MIN(sel_col, row_length(sel_row) - 1);
+    sel_col = MIN(sel_col, row_lengths[sel_row] - 1);
     osd_dirty = 1;
   } else if (KEYB_POSEDGE(dpad_down)) {
     if (sel_row < N_ROWS - 1) {
@@ -85,16 +80,16 @@ void keyboard_virt_handle() {
       sel_row = 0;
       sel_col = prev_cols[sel_row];
     }
-    sel_col = MIN(sel_col, row_length(sel_row) - 1);
+    sel_col = MIN(sel_col, row_lengths[sel_row] - 1);
     osd_dirty = 1;
   } else if (KEYB_POSEDGE(dpad_left)) {
     if (sel_col > 0)
       sel_col--;
     else
-      sel_col = row_length(sel_row) - 1;
+      sel_col = row_lengths[sel_row] - 1;
     osd_dirty = 1;
   } else if (KEYB_POSEDGE(dpad_right)) {
-    if (sel_col < row_length(sel_row) - 1)
+    if (sel_col < row_lengths[sel_row] - 1)
       sel_col++;
     else
       sel_col = 0;
