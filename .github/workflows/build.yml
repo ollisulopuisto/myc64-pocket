@@ -76,8 +76,9 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-pip zip \
+          sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          sudo apt-get update --fix-missing
+          sudo apt-get install -y --fix-missing python3 python3-pip zip \
             libtinfo5 libncurses5 libpng16-16 libfreetype6 libsm6 libxrender1 libxext6 libxtst6 libxi6 libxft2 locales
           pip3 install --upgrade pip
           pip3 install "amaranth" "amaranth-yosys==0.40.0.0.post103"
