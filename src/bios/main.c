@@ -251,20 +251,31 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
       tab->handle();
   }
 
+  // Performance optimization:
+  // irq() runs on every timer tick. Previously *OSD_CTRL was rewritten on
+  // every tick even when the mode had not changed. Write it only on
+  // transitions; the register holds its value between ticks.
+  static uint32_t osd_ctrl_sent = 0xFFFFFFFFu; // forces the first write
+  uint32_t osd_ctrl_want;
   switch (osd_mode) {
   case OSD_FULL:
-    *OSD_CTRL = 1;
+    osd_ctrl_want = 1;
     break;
   case OSD_STATUS_BAR:
     if (joy_notify_timeout && timer_ticks >= joy_notify_timeout && !d64_loaded) {
       osd_mode = OSD_OFF;
       joy_notify_timeout = 0;
     }
-    *OSD_CTRL = 3;
+    osd_ctrl_want = 3; // matches the pre-guard write stream on the timeout tick
     break;
   case OSD_OFF:
-    *OSD_CTRL = 0;
+  default:
+    osd_ctrl_want = 0;
     break;
+  }
+  if (osd_ctrl_want != osd_ctrl_sent) {
+    *OSD_CTRL = osd_ctrl_want;
+    osd_ctrl_sent = osd_ctrl_want;
   }
 
   // Always handle external keyboard
@@ -303,8 +314,15 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs) {
   }
 
   // Epilogue
-  *KEYB_MASK_0 = c64_keyb_mask;
-  *KEYB_MASK_1 = c64_keyb_mask >> 32;
+  // Performance optimization: the keyboard mask only changes on key or
+  // shortcut activity, but the two FPGA register writes were issued on every
+  // timer tick. Skip them while the mask is steady (the common case).
+  static uint64_t keyb_mask_sent = ~0ULL; // forces the first write
+  if (c64_keyb_mask != keyb_mask_sent) {
+    *KEYB_MASK_0 = c64_keyb_mask;
+    *KEYB_MASK_1 = c64_keyb_mask >> 32;
+    keyb_mask_sent = c64_keyb_mask;
+  }
 
   cont1_key_p = cont1_key;
 
